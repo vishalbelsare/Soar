@@ -6,40 +6,57 @@ from __future__ import print_function
 
 import os
 import sys
-import platform
-import socket
 import subprocess
 import re
 import fnmatch
 from SCons.Node.Alias import default_ans
-import SCons.Script
-import shutil
 import time
+
+try:
+    enscons_active = True
+    import toml
+    import enscons, enscons.cpyext
+except ImportError as e:
+    enscons_active = False
+
+# Add the current directory to the path so we can from build_support
+script_dir = Dir('.').srcnode().abspath
+sys.path.append(script_dir)
+from build_support.tcl import prepare_for_compiling_with_tcl
 
 join = os.path.join
 
-SOAR_VERSION = "9.6.0"
+SOAR_VERSION = "9.6.5"
+CPP_STD_VERSION = "c++17"
 
 soarversionFile = open('soarversion', 'w')
 print(SOAR_VERSION, file=soarversionFile)
 soarversionFile.close()
 
+MSVS_ALIAS = 'msvs'
+COMPILE_DB_ALIAS = 'cdb'
+SML_CSHARP_ALIAS = 'sml_csharp'
+SML_JAVA_ALIAS = 'sml_java'
+SML_PYTHON_ALIAS = 'sml_python'
+SML_TCL_ALIAS = 'sml_tcl'
+
 DEF_OUT = 'out'
 DEF_BUILD = 'build'
-DEF_TARGETS = 'kernel cli sml_java debugger headers scripts'.split()
+DEF_TARGETS = ['kernel', 'cli', SML_JAVA_ALIAS, 'debugger', 'headers', 'scripts', COMPILE_DB_ALIAS]
 
 print("================================================================================")
-print("Building Soar", SOAR_VERSION, "                      * will be built if no target specified")
+print(f"Building Soar{SOAR_VERSION}              * will be built if no target specified")
 print("Targets available:")
 print("   Core:              kernel* cli* scripts*")
 print("   Testing:           performance_tests tests")
-print("   SWIG:              sml_python sml_tcl sml_java*")
-print("   Extras:            debugger* headers* tclsoarlib")
+print(f"   SWIG:              {SML_PYTHON_ALIAS} {SML_TCL_ALIAS} {SML_JAVA_ALIAS}* {SML_CSHARP_ALIAS}")
+print(f"   Extras:            debugger* headers* {COMPILE_DB_ALIAS}* tclsoarlib {MSVS_ALIAS} list")
 print("Custom Settings available:                                              *default")
 print("   Build Type:        --dbg, --opt*, --static")
-print("   Custom Paths:      --out, --build, --tcl")
+print("   Custom Paths:      --out, --build, --tcl, --tcl-suffix")
 print("   Compilation time:  --no-svs, --scu*, --no-scu, --no-scu-kernel, --no-scu-cli")
 print("   Customizations:    --cc, --cxx, --cflags, --lnflags, --no-default-flags, --verbose,")
+print("Supported platforms are 64-bit Windows, Linux, and macOS (Intel and ARM)")
 print("================================================================================")
 
 def execute(cmd):
@@ -87,16 +104,6 @@ def vc_version():
     print('cannot identify compiler version')
     Exit(1)
 
-# run cl (MSVC compiler) and return the target architecture (x64 or x86)
-def cl_target_arch():
-    cl = subprocess.Popen('cl.exe /?', stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
-    for line in cl.stdout:
-        if re.search('x64', line.decode()):
-            return 'x64'
-    return 'x86'
-
-def Mac_m64_Capable():
-    return execute('sysctl -n hw.optional.x86_64'.split()).strip() == '1'
 
 # Install all files under source directory to target directory, keeping
 # subdirectory structure and ignoring hidden files
@@ -119,18 +126,6 @@ def InstallDir(env, tgt, src, globstring="*"):
 
     return targets
 
-def InstallDLLs(env):
-  if sys.platform == 'win32' and not GetOption('dbg'):
-    indlls = Glob(os.environ['VCINSTALLDIR'] + 'redist\\' + cl_target_arch() + '\\Microsoft.VC*.CRT\*')
-    outdir = os.path.realpath(GetOption('outdir')) + '\\'
-    if os.path.isfile(outdir):
-        os.remove(outdir)
-    if not os.path.exists(outdir):
-        os.mkdir(outdir)
-    for dll in indlls:
-      # print('copy "' + dll.rstr() + '" "' + outdir + '"')
-      shutil.copy(dll.rstr(), outdir)
-
 Export('InstallDir')
 
 AddOption('--cc', action='store', type='string', dest='cc', nargs=1, metavar='COMPILER', help='Use argument as the C compiler.')
@@ -141,55 +136,65 @@ AddOption('--no-default-flags', action='store_false', dest='defflags', default=T
 AddOption('--no-scu', action='store_false', dest='scu', default=False, help='Don\'t build using single compilation units.')
 AddOption('--no-scu-kernel', action='store_true', dest='no_scu_kernel', default=False, help='Never build kernel in a single compilation unit.')
 AddOption('--no-scu-cli', action='store_true', dest='no_scu_cli', default=False, help='Never build CLI in a single compilation unit.')
-AddOption('--scu', action='store_true', dest='scu', default=False, help='Build using single compilation units.')
+AddOption('--scu', action='store_true', dest='scu', default=True, help='Build using single compilation units.')
 AddOption('--out', action='store', type='string', dest='outdir', default=DEF_OUT, nargs=1, metavar='DIR', help='Directory to install binaries. Defaults to "out".')
 AddOption('--build', action='store', type='string', dest='build-dir', default=DEF_BUILD, nargs=1, metavar='DIR', help='Directory to store intermediate (object) files. Defaults to "build".')
-AddOption('--python', action='store', type='string', dest='python', default=sys.executable, nargs=1, help='Python executable')
-AddOption('--tcl', action='store', type='string', dest='tcl', nargs=1, help='Active TCL (>= 8.6) libraries')
+AddOption('--python', action='store', type='string', dest='python', default=sys.executable, nargs=1, help='Python executable; defaults to same executable used to run SCons')
+AddOption('--tcl', action='store', type='string', dest='tcl', nargs=1, help='Path to Tcl installation (ActiveTcl or otherwise)')
+AddOption('--tcl-suffix', action='store', type='string', dest='tcl_suffix', default="t", nargs=1, help='Tcl binary suffix (defaults to "t", which is used to indicate full threading support in the standard Tcl build)')
 AddOption('--static', action='store_true', dest='static', default=False, help='Use static linking')
 AddOption('--dbg', action='store_true', dest='dbg', default=False, help='Enable debug build.  Disables compiler optimizations, includes debugging symbols, debug trace statements and assertions')
 AddOption('--opt', action='store_false', dest='dbg', default=False, help='Enable optimized build.  Enables compiler optimizations, removes debugging symbols, debug trace statements and assertions')
 AddOption('--verbose', action='store_true', dest='verbose', default=False, help='Output full compiler commands')
 AddOption('--no-svs', action='store_true', dest='nosvs', default=False, help='Build Soar without SVS functionality')
 
-msvc_version = "12.0"
-cl_target_architecture = ''
-if sys.platform == 'win32':
-    msvc_version = vc_version()
-    cl_target_architecture = cl_target_arch()
-    print("MSVC compiler target architecture is", cl_target_architecture)
+if enscons_active:
+    tools = ['default', 'packaging', enscons.generate]
+else:
+    tools = None
 
 env = Environment(
-    MSVC_VERSION=msvc_version,
+    tools=tools,
+    ENSCONS_ACTIVE=enscons_active,
     ENV=os.environ.copy(),
     SCU=GetOption('scu'),
+    DEBUG=GetOption('dbg'),
     NO_SCU_KERNEL=GetOption('no_scu_kernel'),
     NO_SCU_CLI=GetOption('no_scu_cli'),
     BUILD_DIR=GetOption('build-dir'),
     OUT_DIR=os.path.realpath(GetOption('outdir')),
+    TCL_PATH = GetOption('tcl'),
+    TCL_SUFFIX = GetOption('tcl_suffix'),
+    # We fail the build immediately if Tcl cannot be loaded but was specifically requested.
+    # This is done because the Tcl build is super fragile and it's easy to accidentally
+    # build without it.
+    TCL_REQUIRED = 'tclsoarlib' in COMMAND_LINE_TARGETS or 'sml_tcl' in COMMAND_LINE_TARGETS,
     SOAR_VERSION=SOAR_VERSION,
     VISHIDDEN=False,  # needed by swig
-	JAVAVERSION='1.8',
+	JAVAVERSION='11.0',
+    PY_ABI3_VERSION = (3, 5),
+    SML_CSHARP_ALIAS = SML_CSHARP_ALIAS,
+    SML_JAVA_ALIAS = SML_JAVA_ALIAS,
+    SML_PYTHON_ALIAS = SML_PYTHON_ALIAS,
+    SML_TCL_ALIAS = SML_TCL_ALIAS,
+    # indentation for log formatting
+    INDENT = '    ',
+    # used for generating the MSVS project
+    SCONS_HOME=os.path.join(script_dir, 'scons', 'scons-local-4.4.0')
 )
 
-# This creates a file for cli_version.cpp to source.  For optimized builds, this guarantees
-# that the build date will be correct in every build.  (Turned off for debug, b/c it was adding
-# extra compilation time.  (for some reason, this will build it the first two times you compile after
-# it exists.)
+env.AddMethod(prepare_for_compiling_with_tcl, 'PrepareForCompilingWithTcl')
 
-if ((GetOption('dbg') == None) or (GetOption('dbg') == False) or (FindFile('build_time_date.h', 'Core/shared/') == None)):
-    cli_version_dep = open('Core/shared/build_time_date.h', 'w')
-    print("const char* kTimestamp = __TIME__;", file=cli_version_dep)
-    print("const char* kDatestamp = __DATE__;", file=cli_version_dep)
-    print("//* Last build of Soar " + SOAR_VERSION + " occurred at " + time.ctime(time.time()) + " *//", file=cli_version_dep)
-    cli_version_dep.close()
-else:
-    print("Build time stamp file was not built because this is a debug build.")
-    
+# must be specified first or else the resulting file will not contain all compile commands
+env.Tool('compilation_db')
+compile_db_target = env.CompilationDatabase()
+env.Alias(COMPILE_DB_ALIAS, compile_db_target)
+
 if GetOption('cc') != None:
     env.Replace(CC=GetOption('cc'))
 elif sys.platform == 'darwin':
     env.Replace(CC='clang')
+
 if GetOption('cxx') != None:
     env.Replace(CXX=GetOption('cxx'))
 elif sys.platform == 'darwin':
@@ -211,25 +216,49 @@ Export('compiler', 'lsb_build')
 cflags = []
 lnflags = []
 libs = ['Soar']
+
+# TODO: Enabling all the warnings is a WIP! These are very thorough and need to be disabled for
+# parts we don't control, like the SWIG-generated code. See https://github.com/SoarGroup/Soar/issues/347.
+if compiler == "msvc":
+    pass
+    # show all warnings
+    # cflags.append('/W4')
+    # treat warnings as errors
+    # cflags.append('/WX')
+else:
+    # show all warnings
+    # cflags.extend(['-Wall'])
+    # treat warnings as errors
+    # cflags.extend(['-Werror'])
+
+    # We're starting with something simple. We'll add more as we go.
+    cflags.extend(['-Wunused-variable', '-Wreorder', '-Wunused-but-set-variable'])
+
+    # warning doesn't exist in Apple's clang
+    if sys.platform != 'darwin':
+        # causes some spurious warnings; TODO: revisit and re-enable if newer compiler version fixes that
+        cflags.append('-Wno-stringop-overflow')
+
 if compiler == 'g++':
     libs += [ 'pthread', 'dl', 'm' ]
     if GetOption('nosvs'):
         cflags.append('-DNO_SVS')
     if GetOption('defflags'):
-        cflags.append('-Wreturn-type')
-        if GetOption('dbg'):
+        if env['DEBUG']:
             cflags.extend(['-g'])
         else:
             cflags.extend(['-O3', '-DNDEBUG'])
 
         gcc_ver = gcc_version(env['CXX'])
         # check if the compiler supports -fvisibility=hidden (GCC >= 4)
+        # If so, hide symbols not explicitly marked for exporting using our EXPORT macro
         if gcc_ver[0] > 3:
             env.Append(CPPFLAGS='-fvisibility=hidden')
-            
+
             config = Configure(env)
             if config.TryCompile('', '.cpp'):
                 cflags.append('-fvisibility=hidden')
+                # TODO: what does this do?
                 cflags.append('-DGCC_HASCLASSVISIBILITY')
                 env['VISHIDDEN'] = True
             else:
@@ -248,12 +277,12 @@ if compiler == 'g++':
             cflags.extend(['-DSTATIC_LINKED', '-fPIC'])
 
 elif compiler == 'msvc':
-    cflags = ['/EHsc', '/D', '_CRT_SECURE_NO_DEPRECATE', '/D', '_WIN32', '/W2', '/bigobj']
+    cflags.extend(['/EHsc', '/D', '_CRT_SECURE_NO_DEPRECATE', '/D', '_WIN32', '/bigobj'])
     if GetOption('nosvs'):
         cflags.extend(' /D NO_SVS'.split())
     if GetOption('defflags'):
-        if GetOption('dbg'):
-            cflags.extend(' /MDd /Z7 /DEBUG'.split())
+        if env['DEBUG']:
+            cflags.extend(' /MDd /Zi /Od /DEBUG'.split())
             lnflags.extend(['/DEBUG'])
         else:
             cflags.extend(' /MD /O2 /D NDEBUG'.split())
@@ -302,8 +331,10 @@ else:
     sys_lib_path = list(filter(None, os.environ.get('LD_LIBRARY_PATH', '').split(':')))
     sys_inc_path = list(filter(None, os.environ.get('CPATH', '').split(':')))
 
-if sys.platform != 'win32':
-    env.Append(CXXFLAGS='-std=c++11')
+if sys.platform == 'win32':
+    env.Append(CXXFLAGS=f'/std:{CPP_STD_VERSION}')
+else:
+    env.Append(CXXFLAGS=f'-std={CPP_STD_VERSION}')
 
 if not sys.platform == 'darwin':
     env.Append(CPPPATH=sys_inc_path, LIBPATH=sys_lib_path)
@@ -323,16 +354,10 @@ if 'MSVSSolution' in env['BUILDERS']:
     msvs_projs = []
     Export('msvs_projs')
 
-    if (cl_target_architecture == 'x64'):
-        if GetOption('dbg'):
-            g_msvs_variant = 'Debug|x64'
-        else:
-            g_msvs_variant = 'Release|x64'
+    if env['DEBUG']:
+        g_msvs_variant = 'Debug|x64'
     else:
-        if GetOption('dbg'):
-            g_msvs_variant = 'Debug|Win32'
-        else:
-            g_msvs_variant = 'Release|Win32'
+        g_msvs_variant = 'Release|x64'
 
 Export('g_msvs_variant')
 
@@ -342,6 +367,62 @@ for d in os.listdir('.'):
         if os.path.exists(script):
             SConscript(script, variant_dir=join(GetOption('build-dir'), d), duplicate=0)
 
+# section Python-related packaging
+Import('python_shlib')
+Import('python_source')
+Import('soarlib')
+py_lib_namespace = "soar_sml"
+
+# Targets to be built and included in wheel files.
+py_sources = []
+# Targets to be built but NOT included in wheel files.
+py_extra = []
+
+if sys.platform == 'darwin' or os.name == 'nt':
+    # Add soar's library to the wheel directory.
+    #
+    # With MacOS builds, these are shipped in the final wheel archive. Ditto for Windows.
+    #
+    # With linux builds, this step isn't neccecary, as its linker will pick up on the library from out/,
+    # and statically link it against the SWIG-generated shared library.
+    py_sources += [
+        env.Install(py_lib_namespace, soarlib)
+    ]
+
+if sys.platform == 'darwin':
+    # For MacOS, also add to the out/ directory,
+    # so the linker can pick up on it properly.
+    py_extra += [
+        env.Install(env['OUT_DIR'], soarlib)
+    ]
+
+py_sources += [
+    env.Install(py_lib_namespace, python_shlib),
+    env.InstallAs(py_lib_namespace + "/__init__.py", python_source)
+]
+
+env.Alias(SML_PYTHON_ALIAS + "_dev", py_sources)
+
+if enscons_active:
+    # Instead of giving an explicit tag, we tell enscons that we're not building a "pure" (python-only) library,
+    # and so we let it determine the wheel tag by itself.
+    env['ROOT_IS_PURELIB'] = False
+
+    # Whl and WhlFile add multiple targets (sdist, dist_info, bdist_wheel, editable) to env
+    # for enscons (python build backend for scons; required for building with cibuildwheel).
+    whl = env.Whl("platlib", py_sources, root="")
+
+    # Adding Depends makes scons build this file, but enscons will not include it in the final wheel file.
+    env.Depends(whl, py_extra)
+
+    env.WhlFile(source=whl)
+
+    # We make sure that an editable (`pip install -e`) installation always properly installs
+    # the files in the correct places.
+    env.Depends("editable", py_sources)
+
+# endsection Python-related packaging
+
 if 'MSVSSolution' in env['BUILDERS']:
 
     msvs_solution = env.MSVSSolution(
@@ -350,10 +431,11 @@ if 'MSVSSolution' in env['BUILDERS']:
         variant=g_msvs_variant,
     )
 
-    env.Alias('msvs', [msvs_solution] + msvs_projs)
+    env.Alias(MSVS_ALIAS, [msvs_solution] + msvs_projs)
 
-env.Alias('all', list(default_ans.keys()))
-all_aliases = default_ans.keys()
+ALL_ALIAS = 'all'
+all_aliases = list(default_ans.keys())
+env.Alias(ALL_ALIAS, all_aliases)
 
 if COMMAND_LINE_TARGETS == ['list']:
     print('\n'.join(sorted(all_aliases)))
@@ -364,4 +446,3 @@ for a in DEF_TARGETS:
     if a in all_aliases:
         Default(a)
 
-InstallDLLs(env)

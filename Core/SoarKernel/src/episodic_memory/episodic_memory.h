@@ -81,9 +81,6 @@ class epmem_param_container: public soar_module::param_container
         soar_module::constant_param<gm_ordering_choices>* gm_ordering;
         soar_module::constant_param<merge_choices>* merge;
 
-        void print_settings(agent* thisAgent);
-        void print_summary(agent* thisAgent);
-
         epmem_param_container(agent* new_agent);
 };
 
@@ -410,7 +407,8 @@ typedef std::pair<epmem_node_id, epmem_node_id> epmem_id_pair;
 typedef std::list<epmem_id_pair> epmem_id_pool;
 typedef std::map<epmem_node_id, epmem_id_pool*> epmem_hashed_id_pool;
 typedef std::map<epmem_node_id, epmem_hashed_id_pool*> epmem_parent_id_pool;
-typedef std::map<epmem_node_id, epmem_id_pool*> epmem_return_id_pool;
+typedef std::pair<epmem_id_pool*, epmem_node_id> epmem_return_id_info;  // {pool*, child_n_id at assignment time}
+typedef std::map<epmem_node_id, epmem_return_id_info> epmem_return_id_pool;
 
 #ifdef USE_MEM_POOL_ALLOCATORS
 typedef std::set< wme*, std::less< wme* >, soar_module::soar_memory_pool_allocator< wme* > > epmem_wme_set;

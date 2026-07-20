@@ -1,0 +1,408 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., 9.6.5)'
+        required: true
+      create_release:
+        description: 'Create GitHub release'
+        type: boolean
+        default: false
+      tag_name:
+        description: 'Git tag for the release (default: releases/<version>)'
+        required: false
+      release_name:
+        description: 'Display name for the release (default: Soar <version>)'
+        required: false
+
+jobs:
+  build:
+    name: Build (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - os: windows-latest
+            platform: win_x86-64
+          - os: ubuntu-22.04
+            platform: linux_x86-64
+          - os: macos-latest
+            platform: mac_ARM64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up MSVC
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '11'
+
+      - name: Install Conan and Ninja
+        run: pip install conan ninja
+
+      - name: Configure Conan
+        run: conan profile detect
+
+      # ── System dependencies ──
+
+      - name: Install SWIG and Tcl (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          # Ubuntu 22.04 apt only has SWIG 4.0.2, which doesn't generate
+          # stable-ABI compliant Python wrappers (Py_LIMITED_API). Install
+          # SWIG 4.3+ from PyPI instead.
+          pip install swig
+          sudo apt-get update && sudo apt-get install -y tcl-dev
+
+      - name: Install SWIG and Tcl (macOS)
+        if: runner.os == 'macOS'
+        run: brew install swig tcl-tk@8
+
+      - name: Install SWIG (Windows)
+        if: runner.os == 'Windows'
+        run: choco install swig -y
+
+      - name: Cache Tcl build (Windows)
+        if: runner.os == 'Windows'
+        id: tcl-msvc-cache
+        uses: actions/cache@v4
+        with:
+          path: C:\Tcl
+          key: tcl-build-windows-8.6.13
+
+      - name: Build Tcl from source (Windows)
+        if: runner.os == 'Windows' && steps.tcl-msvc-cache.outputs.cache-hit != 'true'
+        run: |
+          $url = "https://master.dl.sourceforge.net/project/tcl/Tcl/8.6.13/tcl8613-src.zip"
+          (New-Object System.Net.WebClient).DownloadFile($url, 'tcl8613-src.zip')
+          Expand-Archive tcl8613-src.zip -DestinationPath tcl8613-src
+          cd tcl8613-src\tcl8.6.13\win
+          nmake /D /f makefile.vc INSTALLDIR="C:\Tcl"
+          if ($LASTEXITCODE -ne 0) { throw "nmake build failed" }
+          nmake /D /f makefile.vc INSTALLDIR="C:\Tcl" install
+          if ($LASTEXITCODE -ne 0) { throw "nmake install failed" }
+
+      # ── Conan dependencies ──
+
+      - name: Install Conan dependencies (Unix)
+        if: runner.os != 'Windows'
+        run: conan install . --build=missing -s build_type=Release
+
+      - name: Install Conan dependencies (Windows)
+        if: runner.os == 'Windows'
+        run: >
+          conan install . --build=missing -s build_type=Release
+          -c tools.cmake.cmaketoolchain:generator=Ninja
+
+      # ── Configure ──
+
+      - name: Configure CMake (Linux)
+        if: runner.os == 'Linux'
+        run: >
+          cmake --preset Release-swig
+          -DSWIG_PYTHON=ON -DSWIG_CSHARP=ON
+
+      - name: Configure CMake (macOS)
+        if: runner.os == 'macOS'
+        run: >
+          cmake --preset Release-swig
+          -DSWIG_PYTHON=ON -DSWIG_CSHARP=ON
+          -DCMAKE_PREFIX_PATH=$(brew --prefix tcl-tk@8)
+
+      - name: Configure CMake (Windows)
+        if: runner.os == 'Windows'
+        run: >
+          cmake --preset Release-swig
+          -DSWIG_PYTHON=ON -DSWIG_CSHARP=ON -DSWIG_TCL=ON
+          -DCMAKE_PREFIX_PATH="C:/Tcl"
+
+      # ── Build & Install ──
+
+      - name: Build
+        run: cmake --build --preset Release-swig
+
+      - name: Install
+        run: cmake --install build/Release --prefix ${{ github.workspace }}/install
+
+      # ── Upload ──
+
+      - name: Upload install tree
+        uses: actions/upload-artifact@v4
+        with:
+          name: soar-${{ matrix.platform }}
+          path: install/
+
+  # ── macOS universal build (mac_x86-64 slot in the zip) ──────────────────
+  #
+  # The arm64-only `mac_ARM64` slot above is a clean native build from the
+  # arm64 GitHub-hosted runner. This job produces a *fat* (arm64 + x86_64)
+  # build for the `mac_x86-64` slot. Intel Macs need x86_64; arm64 Macs can
+  # use either slot. setup.sh in the assembled zip picks the right one based
+  # on uname -m / Rosetta detection.
+  #
+  # Why it's its own job instead of a matrix entry: the previous attempt
+  # tried to do this in the matrix via -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64"
+  # but degraded to arm64-only at link time because Conan and Tcl deps were
+  # arm64-only. This job builds Soar twice (once per arch, against per-arch
+  # Conan + Tcl), then `lipo -create`s every Mach-O before upload.
+  build-mac-universal:
+    name: Build (mac_x86-64, fat universal)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '11'
+
+      - name: Install build tools
+        run: pip install conan ninja swig
+
+      - name: Configure Conan profiles
+        run: |
+          set -e
+          conan profile detect --force
+          # Compiler detection from `default`; we override only `arch` per profile.
+          DEFAULT=~/.conan2/profiles/default
+          mkdir -p ~/.conan2/profiles
+          # arm64 (host) profile
+          sed 's/^arch=.*/arch=armv8/' "$DEFAULT" > ~/.conan2/profiles/macos-arm64
+          # x86_64 cross profile
+          sed 's/^arch=.*/arch=x86_64/' "$DEFAULT" > ~/.conan2/profiles/macos-x86_64
+          echo "=== arm64 profile ==="; cat ~/.conan2/profiles/macos-arm64
+          echo "=== x86_64 profile ==="; cat ~/.conan2/profiles/macos-x86_64
+
+      - name: Cache fat Tcl
+        id: tcl-fat-cache
+        uses: actions/cache@v4
+        with:
+          path: /usr/local/tcl-fat
+          key: tcl-fat-macos-8.6.13-v2
+
+      - name: Build fat Tcl from source
+        if: steps.tcl-fat-cache.outputs.cache-hit != 'true'
+        run: |
+          set -ex
+          curl -LO https://master.dl.sourceforge.net/project/tcl/Tcl/8.6.13/tcl8.6.13-src.tar.gz
+          tar xzf tcl8.6.13-src.tar.gz
+          cd tcl8.6.13/unix
+          # Single-pass fat build. Tcl's macOS configure handles multi-arch
+          # CFLAGS natively. The per-arch dual-pass approach we tried before
+          # silently produced arm64e in both passes because Tcl's configure
+          # macros override single -arch flags. Drop --enable-64bit for the
+          # same reason: it forces a single host arch.
+          # Do NOT set CPPFLAGS with -arch: configure runs a preprocessor
+          # sanity check via /lib/cpp which doesn't understand -arch and
+          # bails ("C preprocessor fails sanity check"). Pin CC/CPP to
+          # clang so configure derives a working "clang -E" preprocessor.
+          export CC=clang
+          export CPP="clang -E"
+          export CFLAGS="-arch x86_64 -arch arm64"
+          export LDFLAGS="-arch x86_64 -arch arm64"
+          ./configure --prefix=/usr/local/tcl-fat --enable-shared --disable-corefoundation
+          make -j$(sysctl -n hw.logicalcpu)
+          sudo make install
+          echo "=== Fat Tcl libs (expect 2 architectures: x86_64 arm64) ==="
+          lipo -info /usr/local/tcl-fat/bin/tclsh8.6
+          lipo -info /usr/local/tcl-fat/lib/libtcl8.6.dylib
+          # Hard fail if the fat build didn't actually produce both arches.
+          for F in /usr/local/tcl-fat/bin/tclsh8.6 /usr/local/tcl-fat/lib/libtcl8.6.dylib; do
+            INFO=$(lipo -info "${F}")
+            if ! echo "${INFO}" | grep -q 'arm64' || ! echo "${INFO}" | grep -q 'x86_64'; then
+              echo "ERROR: ${F} is not fat: ${INFO}"; exit 1
+            fi
+          done
+
+      - name: Build Soar per-arch
+        run: |
+          set -ex
+          for ARCH in arm64 x86_64; do
+            if [ "${ARCH}" = "arm64" ]; then
+              PROFILE=macos-arm64
+            else
+              PROFILE=macos-x86_64
+            fi
+
+            BDIR=build-${ARCH}
+            rm -rf ${BDIR}
+
+            conan install . \
+              --build=missing \
+              -pr:h ${PROFILE} \
+              -pr:b default \
+              -of ${BDIR}
+
+            # Find the Conan-generated toolchain file. Conan 2 puts it under
+            # ${BDIR}/build/Release/generators/ (matching cmake_layout).
+            TOOLCHAIN="${PWD}/${BDIR}/build/Release/generators/conan_toolchain.cmake"
+            ls -la "${TOOLCHAIN}"
+
+            cmake -S . -B ${BDIR}/build/Release \
+              -G Ninja \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DCMAKE_OSX_ARCHITECTURES=${ARCH} \
+              -DCMAKE_TOOLCHAIN_FILE="${TOOLCHAIN}" \
+              -DCMAKE_PREFIX_PATH=/usr/local/tcl-fat \
+              -DBUILD_SHARED_LIBS=ON \
+              -DBUILD_TESTS=ON \
+              -DSVS=ON \
+              -DCLI=ON \
+              -DSWIG_PYTHON=ON \
+              -DSWIG_TCL=ON \
+              -DSWIG_JAVA=ON \
+              -DSWIG_CSHARP=ON \
+              -DJAVA_DEBUGGER=ON \
+              -DTCLSOARLIB=ON
+            cmake --build ${BDIR}/build/Release -j
+            cmake --install ${BDIR}/build/Release --prefix install-${ARCH}
+          done
+
+      - name: Lipo-merge install trees
+        run: |
+          set -ex
+          rm -rf install
+          cp -R install-arm64 install
+          ( cd install-arm64 && find . -type f ) | while read F; do
+            ARM_FILE="install-arm64/${F}"
+            X86_FILE="install-x86_64/${F}"
+            OUT_FILE="install/${F}"
+            if [ -f "${X86_FILE}" ] && file "${ARM_FILE}" 2>/dev/null | grep -q 'Mach-O'; then
+              lipo -create "${ARM_FILE}" "${X86_FILE}" -output "${OUT_FILE}"
+            fi
+          done
+
+      - name: Validate fat binaries
+        run: |
+          set -e
+          echo "=== Checking every Mach-O in install/ is fat (arm64 + x86_64) ==="
+          FAIL=0
+          COUNT=0
+          while IFS= read -r F; do
+            if file "${F}" 2>/dev/null | grep -q 'Mach-O'; then
+              COUNT=$((COUNT + 1))
+              INFO=$(lipo -info "${F}" 2>/dev/null || true)
+              echo "${INFO}"
+              if ! echo "${INFO}" | grep -q 'arm64' || ! echo "${INFO}" | grep -q 'x86_64'; then
+                echo "  ERROR: not fat -> ${F}"
+                FAIL=1
+              fi
+            fi
+          done < <(find install -type f)
+          echo "=== Found ${COUNT} Mach-O binaries in install/ ==="
+          # Sanity floor: a real Soar install ships libSoar, soar CLI,
+          # UnitTests, JNI lib, Tcl SWIG module, tclsoarlib, Python SWIG,
+          # CSharp SWIG, plus SVS bits — easily 8+ Mach-O files. If we see
+          # fewer, the build silently skipped most targets (e.g. preset
+          # variables not wired up).
+          MIN_EXPECTED=8
+          if [ "${COUNT}" -lt "${MIN_EXPECTED}" ]; then
+            echo "ERROR: only ${COUNT} Mach-O binaries in install/, expected at least ${MIN_EXPECTED}."
+            echo "Listing install/ tree for diagnosis:"
+            find install -type f | sort
+            exit 1
+          fi
+          if [ "${FAIL}" -ne 0 ]; then
+            echo "One or more shipped binaries are not fat."
+            exit 1
+          fi
+          echo "All ${COUNT} Mach-O binaries in install/ are fat."
+
+      - name: Upload install tree
+        uses: actions/upload-artifact@v4
+        with:
+          name: soar-mac_x86-64
+          path: install/
+
+  assemble:
+    name: Assemble multiplatform release
+    needs: [build, build-mac-universal]
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all platform builds
+        uses: actions/download-artifact@v4
+        with:
+          path: platforms/
+
+      - name: Clone external repos
+        run: |
+          mkdir -p repos
+          git clone --depth 1 https://github.com/SoarGroup/Agents.git repos/Agents
+          git clone --depth 1 https://github.com/SoarGroup/Release-Support.git repos/Release-Support
+          git clone --depth 1 https://github.com/SoarGroup/VisualSoar.git repos/VisualSoar
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '11'
+
+      - name: Build VisualSoar
+        continue-on-error: true
+        run: |
+          cd repos/VisualSoar
+          chmod +x gradlew
+          ./gradlew build -x test
+
+      - name: Assemble release
+        run: >
+          cmake -P scripts/assemble-release.cmake --
+          "${{ github.event.inputs.version }}"
+          platforms
+          repos
+
+      - name: Upload multiplatform zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: SoarSuite_${{ github.event.inputs.version }}-Multiplatform
+          path: SoarSuite_${{ github.event.inputs.version }}-Multiplatform/
+
+      # The directory upload above re-zips internally and loses Unix exec
+      # bits when retrieved via `gh run download`. Also upload the real zip
+      # produced by file(ARCHIVE_CREATE) in assemble-release.cmake — that
+      # zip stores Unix permissions in the libarchive external-attributes
+      # field, so `unzip` on macOS/Linux preserves +x on soar, UnitTests,
+      # and *.sh. This is the artifact to attach when doing an asset swap.
+      - name: Upload multiplatform zip (preserves exec bits)
+        uses: actions/upload-artifact@v4
+        with:
+          name: SoarSuite_${{ github.event.inputs.version }}-Multiplatform-zip
+          path: SoarSuite_${{ github.event.inputs.version }}-Multiplatform.zip
+          if-no-files-found: error
+
+      - name: Create GitHub Release
+        if: github.event.inputs.create_release == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag_name || format('releases/{0}', github.event.inputs.version) }}
+          name: ${{ github.event.inputs.release_name || format('Soar {0}', github.event.inputs.version) }}
+          draft: true
+          files: |
+            SoarSuite_${{ github.event.inputs.version }}-Multiplatform.zip
+            repos/Release-Support/pdf/SoarManual.pdf
+            repos/Release-Support/pdf/Soar Tutorial Part 1*.pdf
+            repos/Release-Support/pdf/Soar Tutorial Part 2*.pdf
+            repos/Release-Support/pdf/Soar Tutorial Part 3*.pdf
+            repos/Release-Support/pdf/Soar Tutorial Part 4*.pdf
+            repos/Release-Support/pdf/Soar Tutorial Part 5*.pdf
+            repos/Release-Support/pdf/Soar Tutorial Part 6*.pdf
+            repos/Release-Support/pdf/Soar Tutorial Part 7*.pdf
+            repos/Release-Support/pdf/Soar Tutorial Part 8*.pdf

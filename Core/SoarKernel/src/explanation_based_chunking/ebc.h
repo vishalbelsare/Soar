@@ -101,7 +101,6 @@ class Explanation_Based_Chunker
         /* Determines whether learning is on for a particular instantiation
          * based on the global learning settings and whether the state chunky */
         bool set_learning_for_instantiation(instantiation* inst);
-        void set_failure_type(EBCFailureType pFailure_type) {m_failure_type = pFailure_type; };
         void set_rule_type(ebc_rule_type pRuleType) {m_rule_type = pRuleType; };
         void reset_chunks_this_d_cycle() { chunks_this_d_cycle = 0; justifications_this_d_cycle = 0;};
 
@@ -200,7 +199,6 @@ class Explanation_Based_Chunker
         Symbol*             m_prod_name;
         ProductionType      m_prod_type;
         bool                m_should_print_name, m_should_print_prod;
-        EBCFailureType      m_failure_type;
 
         /* Core tables used by EBC during identity assignment during instantiation
          * creation. The data stored within them is temporary and cleared after use. */
@@ -250,9 +248,14 @@ class Explanation_Based_Chunker
         void            remove_chunk_instantiation();
         void            remove_from_chunk_cond_set(chunk_cond_set* set, chunk_cond* cc);
         bool            reorder_and_validate_chunk();
+        void            report_reorder_errors(ProdReorderFailureType reorder_result);
         void            deallocate_failed_chunk();
         void            clean_up(uint64_t pClean_up_id, soar_timer* pTimer = NULL);
         bool            add_chunk_to_rete();
+        
+        /* Contradiction removal hack */
+        void            remove_contradictory_tests_from_chunk();
+        void            remove_contradictory_tests_from_test(test* conjunctive_test);
 
         /* Dependency analysis methods */
         void perform_dependency_analysis();
@@ -267,6 +270,9 @@ class Explanation_Based_Chunker
         void join_identities(Identity* lFromJoinSet, Identity* lToJoinSet);
         void unify_lhs_rhs_connection(condition* lhs_cond, identity_set_quadruple &rhs_id_sets, const rhs_quadruple rhs_funcs);
         void check_for_singleton_unification(condition* pCond);
+        void check_for_constant_match_literalization(condition* pCond);
+        bool has_constant_match_test(test t);
+        void literalize_constant_match_tests(test t, uint64_t inst_id);
         void literalize_RHS_function_args(const rhs_value rv, uint64_t inst_id);
 
         /* Constraint analysis and enforcement methods */

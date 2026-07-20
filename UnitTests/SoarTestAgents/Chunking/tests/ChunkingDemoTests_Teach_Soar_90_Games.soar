@@ -1,4 +1,5 @@
 # Settings
+chunk automatically-create-singletons off
 watch 0
 warnings --off
 epmem --off
@@ -9,8 +10,6 @@ smem --set initial-variable-id 999000
 chunk only
 chunk bottom-only off
 chunk add-osk off
-chunk lhs-repair on
-chunk rhs-repair on
 chunk allow-local-negations on
 chunk add-ltm-links off
 chunk max-chunks 1000
@@ -19,7 +18,6 @@ soar max-elaborations 500
 soar max-goal-depth 100
 soar wait-snc off
 srand 23
-
 # Procedural Memory
 
 sp {evaluate-operator*elaborate*state*look-ahead-operator*merge*copy

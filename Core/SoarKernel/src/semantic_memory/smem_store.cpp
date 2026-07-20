@@ -185,6 +185,11 @@ void SMem_Manager::disconnect_ltm(uint64_t pLTI_ID, std::map<uint64_t, uint64_t>
 void SMem_Manager::LTM_to_DB(uint64_t pLTI_ID, ltm_slot_map* children, bool remove_old_children, bool activate, smem_storage_type store_type)
 {
     assert(pLTI_ID);
+
+    // Concise trace marker: emit a single '@' per smem add, mirroring '*' per
+    // sp from cli_sp.cpp (which is unconditional, not gated by a trace flag).
+    thisAgent->outputManager->printa(thisAgent, "@");
+
     std::map<uint64_t, uint64_t>* old_children = NULL;
     std::map<uint64_t, int64_t>* new_children = NULL;
     if (settings->spreading->get_value() == on)
@@ -203,7 +208,7 @@ void SMem_Manager::LTM_to_DB(uint64_t pLTI_ID, ltm_slot_map* children, bool remo
         }
         disconnect_ltm(pLTI_ID);
 
-        // provide trace output
+        // provide trace output (verbose, opt-in via `trace --smem on`)
         if (thisAgent->trace_settings[ TRACE_SMEM_SYSPARAM ])
         {
             char buf[256];
@@ -290,7 +295,7 @@ void SMem_Manager::LTM_to_DB(uint64_t pLTI_ID, ltm_slot_map* children, bool remo
                         }
                     }
 
-                    // provide trace output
+                    // provide trace output (verbose, opt-in via `trace --smem on`)
                     if (thisAgent->trace_settings[ TRACE_SMEM_SYSPARAM ])
                     {
                         char buf[256];
@@ -343,7 +348,7 @@ void SMem_Manager::LTM_to_DB(uint64_t pLTI_ID, ltm_slot_map* children, bool remo
                         edge_weights[value_lti] = edge_weight;
                         ever_updated_edge_weight = true;
                     }
-                    // provide trace output
+                    // provide trace output (verbose, opt-in via `trace --smem on`)
                     if (thisAgent->trace_settings[ TRACE_SMEM_SYSPARAM ])
                     {
                         char buf[256];
@@ -617,7 +622,7 @@ void SMem_Manager::STM_to_LTM(Symbol* pSTI, smem_storage_type store_type, bool u
     wme_list* children = get_direct_augs_of_id(pSTI, tc);
     wme_list::iterator w;
 
-    uint64_t l_val_ID, l_LTM_ID = get_current_LTI_for_iSTI(pSTI, use_lookup, pOverwriteOldLinkToLTM);
+    uint64_t l_LTM_ID = get_current_LTI_for_iSTI(pSTI, use_lookup, pOverwriteOldLinkToLTM);
 
     // encode this level
     {

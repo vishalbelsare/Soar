@@ -113,6 +113,7 @@ test copy_test(agent* thisAgent, test t, bool pUseUnifiedIdentitySet, bool pStri
             new_ct = make_test(thisAgent, t->data.referent, t->type);
             new_ct->inst_identity = t->inst_identity;
             new_ct->chunk_inst_identity = t->chunk_inst_identity;
+            new_ct->force_literalize = t->force_literalize;
             if (t->type == EQUALITY_TEST)
             {
                 new_ct->eq_test = new_ct;
@@ -271,9 +272,10 @@ bool add_test_merge_disjunctions(agent* thisAgent, test* dest_test_address, test
 
 
 /* ----------------------------------------------------------------
-   Destructively modifies the first test (t) by adding the second
-   one (add_me) to it (usually as a new conjunct).  The first test
-   need not be a conjunctive test nor even exist.
+   Destructively modifies *dest_test_address, always returning a
+   conjunct test that contains (at least) new_test.
+   dest_test_address need not be a conjunctive test nor even be
+   non-null.
 ---------------------------------------------------------------- */
 bool add_test(agent* thisAgent, test* dest_test_address, test new_test, bool merge_disjunctions)
 {
@@ -728,7 +730,6 @@ void add_bound_variables_in_test(agent* thisAgent, test t, tc_number tc, cons** 
 
 void add_bound_variable_with_identity(agent* thisAgent, Symbol* pSym, Symbol* pMatchedSym, uint64_t pInstIdentity,  tc_number tc, matched_symbol_list* var_list)
 {
-    Symbol* referent;
 
     if (pSym->is_variable())
     {
@@ -756,9 +757,6 @@ void add_bound_variable_with_identity(agent* thisAgent, Symbol* pSym, Symbol* pM
 
 char first_letter_from_test(test t)
 {
-    cons* c;
-    char ch;
-
     if (!t) return '*';
 
     switch (t->type)
@@ -938,6 +936,7 @@ test make_test(agent* thisAgent, Symbol* sym, TestType test_type)
     new_ct->inst_identity = new_ct->chunk_inst_identity = LITERAL_VALUE;
     new_ct->identity = NULL_IDENTITY_SET;
     new_ct->eq_test = (test_type == EQUALITY_TEST) ? new_ct : NULL;
+    new_ct->force_literalize = (test_type == CONSTANT_MATCH_TEST);
     if (sym) thisAgent->symbolManager->symbol_add_ref(sym);
     return new_ct;
 }

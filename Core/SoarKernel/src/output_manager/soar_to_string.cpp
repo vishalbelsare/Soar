@@ -72,7 +72,7 @@ const char* Output_Manager::phase_to_string(top_level_phase pPhase)
         case WM_PHASE:
             return soar_TraceNames::kPhaseName_WM;
             break;
-        case DECISION_PHASE:
+        case DECIDE_PHASE:
             return soar_TraceNames::kPhaseName_Decision;
             break;
         case OUTPUT_PHASE:
@@ -133,6 +133,9 @@ const char* Output_Manager::test_type_to_string(byte test_type)
         case SAME_TYPE_TEST:
             return "<=>";
             break;
+        case CONSTANT_MATCH_TEST:
+            return "$$";
+            break;
         case CONJUNCTIVE_TEST:
             return "{ }";
             break;
@@ -160,6 +163,38 @@ void Output_Manager::test_to_string(test t, std::string &destString, bool show_e
             destString += t->data.referent->to_string(true);
             break;
         case CONJUNCTIVE_TEST:
+            // Check if this is exactly the pattern {<x> $$ <x>} - if so, print as $ <x>
+            if (t->data.conjunct_list && t->data.conjunct_list->rest && !t->data.conjunct_list->rest->rest) 
+            {
+                // Exactly two tests in the conjunctive list
+                test first_test = static_cast<test>(t->data.conjunct_list->first);
+                test second_test = static_cast<test>(t->data.conjunct_list->rest->first);
+                
+                // Check if one is EQUALITY_TEST and one is CONSTANT_MATCH_TEST with same referent
+                bool is_shorthand_pattern = false;
+                Symbol* referent = nullptr;
+                
+                if (first_test && second_test) {
+                    if (first_test->type == EQUALITY_TEST && second_test->type == CONSTANT_MATCH_TEST &&
+                        first_test->data.referent == second_test->data.referent) {
+                        is_shorthand_pattern = true;
+                        referent = first_test->data.referent;
+                    } else if (first_test->type == CONSTANT_MATCH_TEST && second_test->type == EQUALITY_TEST &&
+                        first_test->data.referent == second_test->data.referent) {
+                        is_shorthand_pattern = true;
+                        referent = first_test->data.referent;
+                    }
+                }
+                
+                if (is_shorthand_pattern && referent) {
+                    // Print as shorthand: $ <variable>
+                    destString += "$ ";
+                    destString += referent->to_string(true);
+                    break;
+                }
+            }
+            
+            // Default conjunctive test printing
             destString += "{ ";
             for (c = t->data.conjunct_list; c != NIL; c = c->rest)
             {
@@ -177,6 +212,7 @@ void Output_Manager::test_to_string(test t, std::string &destString, bool show_e
         case SAME_TYPE_TEST:
         case SMEM_LINK_TEST:
         case SMEM_LINK_NOT_TEST:
+        case CONSTANT_MATCH_TEST:
             destString += test_type_to_string(t->type);
             destString += ' ';
             destString += t->data.referent->to_string(true);
@@ -584,7 +620,7 @@ void Output_Manager::cond_actions_to_string(agent* thisAgent, condition* top_con
 void Output_Manager::instantiation_to_string(agent* thisAgent, instantiation* inst, std::string &destString)
 {
     sprinta_sf(thisAgent, destString, "%sInstantiation (i %u) matched %y in state %y (level %d)\n",
-        m_pre_string, inst->i_id, inst->prod_name, inst->match_goal, inst->match_goal_level);
+        m_pre_string, inst->i_id, inst->prod_name, inst->match_goal, static_cast<int64_t>(inst->match_goal_level));
     cond_prefs_to_string(thisAgent, inst->top_of_instantiated_conditions, inst->preferences_generated, destString);
 }
 
@@ -615,7 +651,7 @@ void Output_Manager::print_all_inst(TraceMode mode)
 
     for (int y = 0; y < instantiation_list.size(); y++)
     {
-        print_sf("- Instantiation %d:\n", y);
+        print_sf("- Instantiation %d:\n", static_cast<int64_t>(y));
         print_sf("%7", instantiation_list[y]);
     }
 }
@@ -793,9 +829,9 @@ void Output_Manager::debug_find_and_print_sym(char* find_string)
                "  refcount = %d\n"
                "  tc_num   = %d\n",
                newSym,
-               newSym->symbol_type,
+               static_cast<int64_t>(newSym->symbol_type),
                newSym->reference_count,
-               newSym->tc_num);
+               static_cast<int64_t>(newSym->tc_num));
     }
     else
     {
@@ -809,7 +845,7 @@ bool om_print_sym(agent* thisAgent, void* item, void* vMode)
 
     if (!Output_Manager::Get_OM().is_trace_enabled(mode)) return false;
 
-    Output_Manager::Get_OM().printa_sf(thisAgent, "%y (%d)\n", static_cast<symbol_struct*>(item), static_cast<symbol_struct*>(item)->reference_count);
+    Output_Manager::Get_OM().printa_sf(thisAgent, "%y (%u)\n", static_cast<symbol_struct*>(item), static_cast<symbol_struct*>(item)->reference_count);
     return false;
 }
 

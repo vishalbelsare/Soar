@@ -385,6 +385,13 @@ namespace soar
             }
 
         private:
+
+            void set_error(const char* message)
+            {
+                error = message;
+                current.invalidate();
+            }
+
             /**
              * Parses a command, at least one word. Calls the callback handler.
              */
@@ -425,7 +432,7 @@ namespace soar
                     }
                     if (!callback->handle_command(argv))
                     {
-                        current.invalidate();
+                        set_error("command failed (see return string for details)");
                     }
                     else
                     {
@@ -564,8 +571,7 @@ namespace soar
                     switch (current.get())
                     {
                         case 0:
-                            error = "unexpected eof";
-                            current.invalidate();
+                            set_error("unexpected eof");
                             return;
 
                         case '\\':
@@ -606,8 +612,7 @@ namespace soar
                 switch (current.get())
                 {
                     case 0:
-                        error = "unexpected eof";
-                        current.invalidate();
+                        set_error("unexpected eof");
                         return 0;
                     case 'a':
                         ret = '\a';
@@ -648,7 +653,8 @@ namespace soar
 
             /**
              * Read a word enclosed in braces. Brace levels must match unless
-             * braces are escaped.
+             * braces are escaped. Escaping behavior is different from in quoted strings, allowing
+             * most backslashes to be included in the word.
              */
             void read_braces(std::vector< std::string >& argv)
             {
@@ -660,8 +666,7 @@ namespace soar
                     char c = current.get();
                     if (c == 0)
                     {
-                        error = "unexpected eof, unmatched opening brace";
-                        current.invalidate();
+                        set_error("unexpected eof, unmatched opening brace");
                         return;
                     }
                     current.increment();

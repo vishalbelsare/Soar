@@ -30,7 +30,6 @@
 #include "symbol_manager.h"
 #include "test.h"
 #include "working_memory.h"
-#include "xml.h"
 
 #include <stdlib.h>
 
@@ -63,16 +62,29 @@ void Explanation_Based_Chunker::add_to_grounds(condition* cond)
     {
         (cond)->bt.wme_->tc = grounds_tc;
         cond->bt.wme_->chunker_bt_last_ground_cond = cond;
+        
+        // Run identity analysis for first condition that matches this WME
+        if (ebc_settings[SETTING_EBC_LEARNING_ON])
+        {
+            check_for_constant_match_literalization(cond);
+        }
     }
     if ((cond->bt.wme_->chunker_bt_last_ground_cond != cond) && ebc_settings[SETTING_EBC_LEARNING_ON])
     {
         check_for_singleton_unification(cond);
+        check_for_constant_match_literalization(cond);
     }
     push(thisAgent, (cond), grounds);
 }
 
 void Explanation_Based_Chunker::add_to_locals(condition* cond)
 {
+    // Check if this local condition has constant match tests
+    if (ebc_settings[SETTING_EBC_LEARNING_ON])
+    {
+        check_for_constant_match_literalization(cond);
+    }
+    
     push(thisAgent, (cond), locals);
 }
 
@@ -96,7 +108,7 @@ void Explanation_Based_Chunker::backtrace_through_instantiation(preference* pPre
     rhs_quadruple rhs_funcs = pPref->rhs_func_inst_identities;
 
     condition* c;
-    cons* grounds_to_print, *locals_to_print, *negateds_to_print;
+    cons *negateds_to_print;
 
     if (thisAgent->trace_settings[TRACE_BACKTRACING_SYSPARAM])
     {
@@ -149,7 +161,6 @@ void Explanation_Based_Chunker::backtrace_through_instantiation(preference* pPre
     {
         backtrace_through_OSK(inst->OSK_proposal_prefs, inst->explain_depth);
     }
-    Symbol* thisID, *value;
 
     /* --- scan through conditions, collect grounds and locals --- */
     negateds_to_print = NIL;
@@ -242,9 +253,9 @@ void Explanation_Based_Chunker::trace_locals()
 {
 
     /* mvp 5-17-94 */
-    cons* c, *l_OSK_prefs;
+    cons* c;
     condition* cond;
-    preference* bt_pref, *p;
+    preference* bt_pref;
 
     if (thisAgent->trace_settings[TRACE_BACKTRACING_SYSPARAM])
     {

@@ -53,10 +53,8 @@ bool CommandLineInterface::DoSMem(const char pOp, const std::string* pArg1, cons
         {
             SetError(*err);
         }
-        else
-        {
-            PrintCLIMessage("Knowledge added to semantic memory.");
-        }
+        // On success: stay quiet, mirroring `sp { ... }`. Per-LTI '@' trace
+        // markers are emitted by SMem_Manager::LTM_to_DB when `trace smem` is on.
         delete err;
         return result;
     }
@@ -133,9 +131,11 @@ bool CommandLineInterface::DoSMem(const char pOp, const std::string* pArg1, cons
     }
     else if (pOp == 'i')
     {
-        /* Don't think we need clear out anything else any more */
-
-        thisAgent->SMem->reinit();
+        if (thisAgent->SMem->connected()) {
+            thisAgent->SMem->reinit();
+        } else {
+            thisAgent->SMem->attach();
+        }
 
         PrintCLIMessage("Semantic memory system re-initialized.");
         if (thisAgent->SMem->settings->append_db->get_value() == on)
@@ -169,6 +169,14 @@ bool CommandLineInterface::DoSMem(const char pOp, const std::string* pArg1, cons
                 if (thisAgent->SMem->connected())
                 {
                     lti_id = thisAgent->SMem->lti_exists(lexer.current_lexeme.int_val);
+                }
+            }
+            else if (lexer.current_lexeme.type == STR_CONSTANT_LEXEME) 
+            {
+                if (thisAgent->SMem->connected())
+                {
+                    std::string lti_alias = lexer.current_lexeme.string();
+                    lti_id = thisAgent->SMem->get_lti_with_alias(lti_alias);
                 }
             }
 
@@ -403,14 +411,13 @@ bool CommandLineInterface::DoSMem(const char pOp, const std::string* pArg1, cons
         std::string* err = new std::string("");
         uint64_t lti_id = NIL;
 
+        if (!thisAgent->SMem->connected())
+        {
+            return SetError("Cannot export smem: smem database not connected.");
+        }
+
         if (pArg2)
         {
-            thisAgent->SMem->attach();
-            if (!thisAgent->SMem->connected())
-            {
-                return SetError("Semantic memory database not connected.");
-            }
-
             const char* pAttr_c_str = pArg2->c_str();
             soar::Lexer lexer(thisAgent, pAttr_c_str);
             if (!lexer.get_lexeme()) return SetError("LTI not found.");
@@ -423,6 +430,14 @@ bool CommandLineInterface::DoSMem(const char pOp, const std::string* pArg1, cons
                 if (thisAgent->SMem->connected())
                 {
                     lti_id = thisAgent->SMem->lti_exists(lexer.current_lexeme.int_val);
+                }
+            }
+            else if (lexer.current_lexeme.type == STR_CONSTANT_LEXEME) 
+            {
+                if (thisAgent->SMem->connected())
+                {
+                    std::string lti_alias = lexer.current_lexeme.string();
+                    lti_id = thisAgent->SMem->get_lti_with_alias(lti_alias);
                 }
             }
 
@@ -456,41 +471,8 @@ bool CommandLineInterface::DoSMem(const char pOp, const std::string* pArg1, cons
                 return false;
             }
 
-            PrintCLIMessage("Exported semantic memory to file.");
-        }
-        delete err;
-        return result;
-    }
-    else if (pOp == 'x')
-    {
-        std::string* err = new std::string("smem_export.soar");
-        uint64_t lti_id = NIL;
-
-        std::string export_text;
-        bool result = thisAgent->SMem->export_smem(0, export_text, &(err));
-
-        if (!result)
-        {
-            SetError(*err);
-        }
-        else
-        {
-            if (!DoCLog(LOG_NEW, err, 0, true))
-            {
-                return false;
-            }
-
-            if (!DoCLog(LOG_ADD, 0, &export_text, true))
-            {
-                return false;
-            }
-
-            if (!DoCLog(LOG_CLOSE, 0, 0, true))
-            {
-                return false;
-            }
-
-            PrintCLIMessage("Exported semantic memory to file.");
+            tempString << "Exported semantic memory to file '" << pArg1->c_str() << "'.";
+            PrintCLIMessage(&tempString);
         }
         delete err;
         return result;

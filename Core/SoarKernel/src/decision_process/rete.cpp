@@ -26,7 +26,7 @@
 #include "working_memory.h"
 #include "xml.h"
 
-#include <assert.h>
+#include <cassert>
 #include <sstream>
 #include <stdlib.h>
 
@@ -1514,7 +1514,9 @@ inline void _epmem_remove_wme(agent* thisAgent, wme* w)
                         (unsigned int) w->id->id->epmem_id, (unsigned int) epmem_temporal_hash(thisAgent, w->attr), (unsigned int) w->value->id->epmem_id);
 #endif
                 epmem_return_id_pool::iterator p = thisAgent->EpMem->epmem_id_replacement->find(w->epmem_id);
-                (*p->second).push_front(std::make_pair(w->value->id->epmem_id, w->epmem_id));
+                epmem_id_pool* return_pool = p->second.first;
+                epmem_node_id stored_child_n_id = p->second.second;
+                return_pool->push_front(std::make_pair(stored_child_n_id, w->epmem_id));
                 thisAgent->EpMem->epmem_id_replacement->erase(p);
             }
         }
@@ -2926,6 +2928,7 @@ void add_rete_tests_for_test(agent* thisAgent, test t,
             break;
         case SMEM_LINK_TEST:
         case SMEM_LINK_NOT_TEST:
+        case CONSTANT_MATCH_TEST:
         case NOT_EQUAL_TEST:
         case LESS_TEST:
         case GREATER_TEST:
@@ -3715,7 +3718,9 @@ void update_max_rhs_unbound_variables(agent* thisAgent, uint64_t num_for_new_pro
    initial instantiation of the production.  This routine returns
    DUPLICATE_PRODUCTION if the production was a duplicate; else
    NO_REFRACTED_INST if no refracted inst. was given; else either
-   REFRACTED_INST_MATCHED or REFRACTED_INST_DID_NOT_MATCH.
+   REFRACTED_INST_MATCHED or REFRACTED_INST_DID_NOT_MATCH. In the case
+   of duplicate justifications, the previous one is excised before adding
+   the new one in its place.
 
    The initial refracted instantiation is provided so the initial
    instantiation of a newly-build chunk doesn't get fired.  We handle
@@ -3728,8 +3733,6 @@ void update_max_rhs_unbound_variables(agent* thisAgent, uint64_t num_for_new_pro
    tentative_retractions.  If not, there was a match (and the p-node's
    activation routine filled in the token info on the instantiation for
    us).  If so, there was no match for the refracted instantiation.
-
-   BUGBUG should we check for duplicate justifications?
 --------------------------------------------------------------------- */
 
 byte add_production_to_rete(agent* thisAgent, production* p, condition* lhs_top, instantiation* refracted_inst, bool warn_on_duplicates, production* &duplicate_rule, bool ignore_rhs)
@@ -3802,18 +3805,38 @@ byte add_production_to_rete(agent* thisAgent, production* p, condition* lhs_top,
         }
         /* --- duplicate production found --- */
         duplicate_rule = p_node->b.p.prod;
+        // For o-supported justifications, we have to excise the original and
+        // add the duplicate so that the RHS is re-applied. For i-supported justifications,
+        // this should have a negligible effect. Since support calculations are done elsewhere,
+        // we save some work by not checking it here and simply always doing the excise/replace
+        // for duplicates.
+        if (p->type == JUSTIFICATION_PRODUCTION_TYPE) {
+            if (warn_on_duplicates)
+            {
+                std::stringstream output;
+                output << "\nExcising justification "
+                    << duplicate_rule->name->to_string(true)
+                    << " to replace with duplicate "
+                    << p->name->to_string(true)
+                    << " ";
+                xml_generate_warning(thisAgent, output.str().c_str());
+                thisAgent->outputManager->printa(thisAgent, output.str().c_str());
+            }
+            excise_production(thisAgent, duplicate_rule, false, true);
+            // After the excision, p_node and its ancestors may no longer exist, so we recurse
+            // to add the new production to the rete, which will add new p_nodes as needed.
+            return add_production_to_rete(thisAgent, p, lhs_top, refracted_inst, warn_on_duplicates, duplicate_rule, ignore_rhs);
+        }
         if (warn_on_duplicates)
         {
             std::stringstream output;
             output << "\nIgnoring "
                    << p->name->to_string(true)
                    << " because it is a duplicate of "
-                   << p_node->b.p.prod->name->to_string(true)
+                   << duplicate_rule->name->to_string(true)
                    << " ";
             xml_generate_warning(thisAgent, output.str().c_str());
-
-            thisAgent->outputManager->printa_sf(thisAgent, "Ignoring %y because it is a duplicate of %y\n",
-                               p->name, p_node->b.p.prod->name);
+            thisAgent->outputManager->printa(thisAgent, output.str().c_str());
         }
         thisAgent->symbolManager->deallocate_symbol_list_removing_references(rhs_unbound_vars_for_new_prod);
         return DUPLICATE_PRODUCTION;
@@ -4587,6 +4610,16 @@ bool constant_smem_link_not_rete_test_routine(agent* /*thisAgent*/, rete_test* r
     return static_cast<bool>(!s1->is_lti() ||  !s2->is_int() || (s1->id->LTI_ID != s2->ic->value));
 }
 
+bool constant_constant_match_rete_test_routine(agent* /*thisAgent*/, rete_test* rt, token* /*left*/,
+        wme* w)
+{
+    Symbol* s1, *s2;
+
+    s1 = field_from_wme(w, rt->right_field_num);
+    s2 = rt->data.constant_referent;
+    return static_cast<bool>(s1 == s2 && s1->is_constant());
+}
+
 bool variable_equal_rete_test_routine(agent* /*thisAgent*/, rete_test* rt, token* left, wme* w)
 {
     Symbol* s1, *s2;
@@ -4794,6 +4827,28 @@ bool variable_smem_link_not_rete_test_routine(agent* /*thisAgent*/, rete_test* r
         return_val = true;
     }
     return return_val;
+}
+
+bool variable_constant_match_rete_test_routine(agent* /*thisAgent*/, rete_test* rt, token* left,
+        wme* w)
+{
+    Symbol* s1, *s2;
+    int i;
+
+    s1 = field_from_wme(w, rt->right_field_num);
+
+    if (rt->data.variable_referent.levels_up != 0)
+    {
+        i = rt->data.variable_referent.levels_up - 1;
+        while (i != 0)
+        {
+            left = left->parent;
+            i--;
+        }
+        w = left->w;
+    }
+    s2 = field_from_wme(w, rt->data.variable_referent.field_num);
+    return static_cast<bool>(s1 == s2 && s1->is_constant());
 }
 
 
@@ -5912,7 +5967,7 @@ void p_node_left_addition(agent* thisAgent, rete_node* node, token* tok, wme* w)
     /* initialize goal regardless of run mode */
     msc->level = NO_WME_LEVEL;
     msc->goal = NIL;
-    
+
     /*  (this is a RCHONG comment, but might also apply to Operand2...?)
 
     what we have to do now is to, essentially, determine the kind of
@@ -6011,7 +6066,7 @@ void p_node_left_addition(agent* thisAgent, rete_node* node, token* tok, wme* w)
                 elaborations (<o> ^attr ^value) are IE_PROD.  If prod has
                 both operator applications and <o> elabs, then it's PE_PROD
                 and the user is warned that <o> elabs will be o-supported. */
-                
+
                 op_elab = false;
                 lowest_goal_wme = NIL;
 
@@ -6172,7 +6227,7 @@ void p_node_left_addition(agent* thisAgent, rete_node* node, token* tok, wme* w)
         // on the assertion list, Soar will still halt, but the production
         // named will be inaccurate.
         thisAgent->outputManager->printa_sf(thisAgent, "\n*** Production match-time interrupt (:interrupt), probably from %y\n", node->b.p.prod->name);
-        thisAgent->outputManager->printa_sf(thisAgent, "    [Phase] (Interrupt, Stop) is [%d] (%d,%d)\n", thisAgent->current_phase, node->b.p.prod->interrupt, thisAgent->stop_soar);
+        thisAgent->outputManager->printa_sf(thisAgent, "    [Phase] (Interrupt, Stop) is [%d] (%d,%d)\n", static_cast<int64_t>(thisAgent->current_phase), static_cast<int64_t>(node->b.p.prod->interrupt), static_cast<int64_t>(thisAgent->stop_soar));
 
         thisAgent->reason_for_stopping = ":interrupt";
     }
@@ -6220,7 +6275,7 @@ void p_node_left_removal(agent* thisAgent, rete_node* node, token* tok, wme* w)
                 thisAgent->stop_soar = false;
                 if (thisAgent->trace_settings[TRACE_ASSERTIONS_SYSPARAM])
                 {
-                    thisAgent->outputManager->printa_sf(thisAgent, "RETRACTION (1) reset interrupt to READY -- (Interrupt, Stop) to (%d, %d)\n", node->b.p.prod->interrupt, thisAgent->stop_soar);
+                    thisAgent->outputManager->printa_sf(thisAgent, "RETRACTION (1) reset interrupt to READY -- (Interrupt, Stop) to (%d, %d)\n", static_cast<int64_t>(node->b.p.prod->interrupt), static_cast<int64_t>(thisAgent->stop_soar));
                 }
             }
 
@@ -6312,7 +6367,7 @@ void p_node_left_removal(agent* thisAgent, rete_node* node, token* tok, wme* w)
             for (assertion = thisAgent->ms_retractions;  assertion; assertion = assertion->next)
             {
                 thisAgent->outputManager->printa_sf(thisAgent, "     Retraction: %y ", assertion->p_node->b.p.prod->name);
-                thisAgent->outputManager->printa_sf(thisAgent, " at level %d\n", assertion->level);
+                thisAgent->outputManager->printa_sf(thisAgent, " at level %d\n", static_cast<int64_t>(assertion->level));
             }
 
             if (thisAgent->nil_goal_retractions)
@@ -6322,7 +6377,7 @@ void p_node_left_removal(agent* thisAgent, rete_node* node, token* tok, wme* w)
                 for (assertion = thisAgent->nil_goal_retractions; assertion; assertion = assertion->next_in_level)
                 {
                     thisAgent->outputManager->printa_sf(thisAgent, "     Retraction: %y ", assertion->p_node->b.p.prod->name);
-                    thisAgent->outputManager->printa_sf(thisAgent, " at level %d\n", assertion->level);
+                    thisAgent->outputManager->printa_sf(thisAgent, " at level %d\n", static_cast<int64_t>(assertion->level));
                     if (assertion->goal)
                     {
                         thisAgent->outputManager->printa_sf(thisAgent, "This assertion has non-NIL goal pointer.\n");
@@ -7897,7 +7952,7 @@ bool load_rete_net(agent* thisAgent, FILE* source_file)
             rete_net_64 = true; // used by reteload_eight_bytes
             break;
         default:
-            thisAgent->outputManager->printa_sf(thisAgent, "This file is in a format (version %d) I don't understand.\n", format_version_num);
+            thisAgent->outputManager->printa_sf(thisAgent, "This file is in a format (version %d) I don't understand.\n", static_cast<int64_t>(format_version_num));
             return false;
     }
 
@@ -8044,7 +8099,7 @@ void get_all_node_count_stats(agent* thisAgent)
     //for (i=0; i<256; i++)
     //  if (thisAgent->rete_node_counts[i] &&
     //      (*bnode_type_names[i] == 0)) {
-    //    thisAgent->OutputManager->print( "Internal eror: unknown node type [%d] has nonzero count.\n",i);
+    //    thisAgent->OutputManager->print( "Internal eror: unknown node type [%d] has nonzero count.\n", static_cast<int64_t>(i));
     //  }
     init_bnode_type_names(thisAgent);
 
@@ -8496,7 +8551,7 @@ void print_match_set(agent* thisAgent, wme_trace_type wtt, ms_trace_type mst)
                 thisAgent->outputManager->printa_sf(thisAgent, " [%y] ", tmp->goal);
                 if (tmp->count > 1)
                 {
-                    thisAgent->outputManager->printa_sf(thisAgent, "(%d)\n", tmp->count);
+                    thisAgent->outputManager->printa_sf(thisAgent, "(%d)\n", static_cast<int64_t>(tmp->count));
                 }
                 else
                 {
@@ -8558,7 +8613,7 @@ void print_match_set(agent* thisAgent, wme_trace_type wtt, ms_trace_type mst)
                 thisAgent->outputManager->printa_sf(thisAgent, " [%y] ", tmp->goal);
                 if (tmp->count > 1)
                 {
-                    thisAgent->outputManager->printa_sf(thisAgent, "(%d)\n", tmp->count);
+                    thisAgent->outputManager->printa_sf(thisAgent, "(%d)\n", static_cast<int64_t>(tmp->count));
                 }
                 else
                 {
@@ -8626,7 +8681,7 @@ void print_match_set(agent* thisAgent, wme_trace_type wtt, ms_trace_type mst)
                 }
                 if (tmp->count > 1)
                 {
-                    thisAgent->outputManager->printa_sf(thisAgent, "(%d)\n", tmp->count);
+                    thisAgent->outputManager->printa_sf(thisAgent, "(%d)\n", static_cast<int64_t>(tmp->count));
                 }
                 else
                 {
@@ -9061,7 +9116,7 @@ void xml_match_set(agent* thisAgent, wme_trace_type wtt, ms_trace_type mst)
                 See 2.110 in the OPERAND-CHANGE-LOG. */
                 //thisAgent->outputManager->printa_sf(thisAgent, " [%y] ", tmp->goal);
                 //if (tmp->count > 1)
-                //  print(thisAgent, "(%d)\n", tmp->count);
+                //  print(thisAgent, "(%d)\n", static_cast<int64_t>(tmp->count));
                 //else
                 //  print(thisAgent, "\n");
                 thisAgent->memoryManager->free_memory(tmp, MISCELLANEOUS_MEM_USAGE);
@@ -9134,7 +9189,7 @@ void xml_match_set(agent* thisAgent, wme_trace_type wtt, ms_trace_type mst)
                 See 2.110 in the OPERAND-CHANGE-LOG. */
                 //thisAgent->outputManager->printa_sf(thisAgent, " [%y] ", tmp->goal);
                 //if (tmp->count > 1)
-                //  print(thisAgent, "(%d)\n", tmp->count);
+                //  print(thisAgent, "(%d)\n", static_cast<int64_t>(tmp->count));
                 //else
                 //  print(thisAgent, "\n");
 
@@ -9211,7 +9266,7 @@ void xml_match_set(agent* thisAgent, wme_trace_type wtt, ms_trace_type mst)
                 //else
                 //  print(thisAgent, " [NIL] ");
                 //if(tmp->count > 1)
-                //  print(thisAgent, "(%d)\n", tmp->count);
+                //  print(thisAgent, "(%d)\n", static_cast<int64_t>(tmp->count));
                 //else
                 //  print(thisAgent, "\n");
                 thisAgent->memoryManager->free_memory(tmp, MISCELLANEOUS_MEM_USAGE);
@@ -9342,7 +9397,7 @@ int64_t xml_aux(agent* thisAgent,    /* current agent */
                 for (rm = node->b.posneg.alpha_mem_->right_mems; rm != NIL;
                         rm = rm->next_in_am)
                 {
-                    //if (wtt==TIMETAG_WME_TRACE) print (thisAgent, "%lu", rm->w->timetag);
+                    //if (wtt==TIMETAG_WME_TRACE) print (thisAgent, "%" SCNu64, rm->w->timetag);
                     //else if (wtt==FULL_WME_TRACE) print_wme (thisAgent, rm->w);
                     //print (thisAgent, " ");
                     if (wtt == TIMETAG_WME_TRACE)
@@ -9533,6 +9588,9 @@ void init_rete(agent* thisAgent)
     rete_test_routines[CONSTANT_RELATIONAL_RETE_TEST +
                        RELATIONAL_SMEM_LINK_NOT_TEST] =
                            constant_smem_link_not_rete_test_routine;
+    rete_test_routines[CONSTANT_RELATIONAL_RETE_TEST +
+                       RELATIONAL_CONSTANT_MATCH_TEST] =
+                           constant_constant_match_rete_test_routine;
     rete_test_routines[VARIABLE_RELATIONAL_RETE_TEST +
                        RELATIONAL_EQUAL_RETE_TEST] =
                            variable_equal_rete_test_routine;
@@ -9560,4 +9618,7 @@ void init_rete(agent* thisAgent)
     rete_test_routines[VARIABLE_RELATIONAL_RETE_TEST +
                            RELATIONAL_SMEM_LINK_NOT_TEST] =
                                variable_smem_link_not_rete_test_routine;
+    rete_test_routines[VARIABLE_RELATIONAL_RETE_TEST +
+                       RELATIONAL_CONSTANT_MATCH_TEST] =
+                           variable_constant_match_rete_test_routine;
     }

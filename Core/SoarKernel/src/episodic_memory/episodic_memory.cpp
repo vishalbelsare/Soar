@@ -15,6 +15,7 @@
 #include "working_memory_activation.h"
 #include "xml.h"
 
+#include <cassert>
 #include <cmath>
 #include <algorithm>
 #include <iterator>
@@ -442,8 +443,6 @@ inline Symbol* epmem_reverse_hash(agent* thisAgent, epmem_hash_id s_id_lookup, b
 
 inline void epmem_reverse_hash_print(agent* thisAgent, epmem_hash_id s_id_lookup, std::string& dest, byte sym_type = 255)
 {
-    Symbol* return_val = NULL;
-
     // This may be faster than including type lookup in edges?  Might want to check later.
 
     if (sym_type == 255)
@@ -472,7 +471,6 @@ inline void epmem_reverse_hash_print(agent* thisAgent, epmem_hash_id s_id_lookup
             break;
 
         default:
-            return_val = NULL;
             break;
     }
 }
@@ -2602,7 +2600,7 @@ inline void _epmem_store_level(agent* thisAgent,
                         if (r_p->second->my_id != EPMEM_NODEID_BAD)
                         {
                             (*w_p)->epmem_id = r_p->second->my_id;
-                            (*thisAgent->EpMem->epmem_id_replacement)[(*w_p)->epmem_id ] = my_id_repo2;
+                            (*thisAgent->EpMem->epmem_id_replacement)[(*w_p)->epmem_id ] = {my_id_repo2, (*w_p)->value->id->epmem_id};
 #ifdef DEBUG_EPMEM_WME_ADD
                             fprintf(stderr, "   Assigning id from existing pool: %d\n", (unsigned int)(*w_p)->epmem_id);
 #endif
@@ -2640,7 +2638,7 @@ inline void _epmem_store_level(agent* thisAgent,
                                     {
                                         (*w_p)->epmem_id = pool_p->second;
                                         (*my_id_repo)->erase(pool_p);
-                                        (*thisAgent->EpMem->epmem_id_replacement)[(*w_p)->epmem_id ] = (*my_id_repo);
+                                        (*thisAgent->EpMem->epmem_id_replacement)[(*w_p)->epmem_id ] = {(*my_id_repo), (*w_p)->value->id->epmem_id};
 #ifdef DEBUG_EPMEM_WME_ADD
                                         fprintf(stderr, "   Assigning id from existing pool: %d\n", (unsigned int)(*w_p)->epmem_id);
 #endif
@@ -2707,7 +2705,7 @@ inline void _epmem_store_level(agent* thisAgent,
 #endif
                                     (*w_p)->value->id->epmem_valid = thisAgent->EpMem->epmem_validation;
                                     (*my_id_repo)->erase(pool_p);
-                                    (*thisAgent->EpMem->epmem_id_replacement)[(*w_p)->epmem_id ] = (*my_id_repo);
+                                    (*thisAgent->EpMem->epmem_id_replacement)[(*w_p)->epmem_id ] = {(*my_id_repo), (*w_p)->value->id->epmem_id};
 
 #ifdef DEBUG_EPMEM_WME_ADD
                                     fprintf(stderr, "   Assigning id from existing pool %d.\n", (unsigned int)(*w_p)->epmem_id);
@@ -2778,6 +2776,7 @@ inline void _epmem_store_level(agent* thisAgent,
 
                 fprintf(stderr, "   Adding wme to epmem_wmes_identifier table.\n");
 #endif
+
                 thisAgent->EpMem->epmem_stmts_graph->add_epmem_wmes_identifier->bind_int(1, parent_id);
                 thisAgent->EpMem->epmem_stmts_graph->add_epmem_wmes_identifier->bind_int(2, my_hash);
                 thisAgent->EpMem->epmem_stmts_graph->add_epmem_wmes_identifier->bind_int(3, (*w_p)->value->id->epmem_id);
@@ -2789,7 +2788,7 @@ inline void _epmem_store_level(agent* thisAgent,
                 fprintf(stderr, "   Incrementing and setting wme id to %d\n", (unsigned int)(*w_p)->epmem_id);
 #endif
                 // replace the epmem_id and wme id in the right place
-                (*thisAgent->EpMem->epmem_id_replacement)[(*w_p)->epmem_id ] = my_id_repo2;
+                (*thisAgent->EpMem->epmem_id_replacement)[(*w_p)->epmem_id ] = {my_id_repo2, (*w_p)->value->id->epmem_id};
 
                 // new nodes definitely start
                 epmem_edge.emplace((*w_p)->epmem_id,static_cast<int64_t>((*w_p)->value->id->is_lti() ? (*w_p)->value->id->LTI_ID : 0));
@@ -2921,6 +2920,7 @@ inline void _epmem_store_level(agent* thisAgent,
             }
         }
     }
+
 }
 
 void epmem_new_episode(agent* thisAgent)
@@ -2941,7 +2941,7 @@ void epmem_new_episode(agent* thisAgent)
     epmem_time_id time_counter = thisAgent->EpMem->epmem_stats->time->get_value();
 
     // provide trace output
-    print_sysparam_trace(thisAgent, TRACE_EPMEM_SYSPARAM,  "New episodic memory recorded for time %u.\n", static_cast<long int>(time_counter));
+    print_sysparam_trace(thisAgent, TRACE_EPMEM_SYSPARAM,  "New episodic memory recorded for time %u.\n", static_cast<uint64_t>(time_counter));
 
     // perform storage
     {
@@ -4840,7 +4840,7 @@ void epmem_process_query(agent* thisAgent, Symbol* state, Symbol* pos_query, Sym
                     epmem_print_retrieval_state(literal_cache, pedge_caches, uedge_caches);
                 }
 
-                print_sysparam_trace(thisAgent, TRACE_EPMEM_SYSPARAM, "Considering episode (time, cardinality, score) (%u, %u, %f)\n", static_cast<long long int>(current_episode), current_cardinality, current_score);
+                print_sysparam_trace(thisAgent, TRACE_EPMEM_SYSPARAM, "Considering episode (time, cardinality, score) (%u, %u, %f)\n", static_cast<uint64_t>(current_episode), static_cast<uint64_t>(current_cardinality), current_score);
 
                 // if
                 // * the current time is still before any new intervals
@@ -6023,92 +6023,4 @@ void EpMem_Manager::clean_up_for_agent_deletion()
     delete epmem_wme_adds;
 
     delete epmem_db;
-}
-void epmem_param_container::print_settings(agent* thisAgent)
-{
-    std::string tempString;
-    Output_Manager* outputManager = thisAgent->outputManager;
-
-//    outputManager->reset_column_indents();
-//    outputManager->set_column_indent(0, 25);
-//    outputManager->set_column_indent(1, 58);
-//    outputManager->printa(thisAgent, "=======================================================\n");
-//    outputManager->printa(thisAgent, "-      Episodic Memory Sub-Commands and Options       -\n");
-//    outputManager->printa(thisAgent, "=======================================================\n");
-//    outputManager->printa_sf(thisAgent, "%s   %-\n", concatJustified("enabled",learning->get_string(), 55).c_str());
-//    outputManager->printa_sf(thisAgent, "%s   %-%s\n", concatJustified("database", database->get_string(), 55).c_str(), "Whether to store database in memory or file");
-//    outputManager->printa_sf(thisAgent, "%s   %-%s\n", concatJustified("append", append_db->get_string(), 55).c_str(), "Whether to append or overwrite database");
-//    outputManager->printa_sf(thisAgent, "%s   %-%s\n", concatJustified("path", path->get_string(), 55).c_str(), "Path of database file");
-//    outputManager->printa(thisAgent, "-------------------------------------------------------\n");
-//    outputManager->printa_sf(thisAgent, "%s   %-%s\n", concatJustified("smem", "[? | help]", 55).c_str(), "Print this help screen");
-//    outputManager->printa_sf(thisAgent, "%s   %-%s\n", concatJustified("smem", "[--enable | --disable ]", 55).c_str(), "Enable/disable semantic memory");
-//    outputManager->printa_sf(thisAgent, "%s   %-%s\n", concatJustified("smem [--get | --set] ","<option> [<value>]", 55).c_str(), "Print or set value of an SMem parameter");
-//    outputManager->printa_sf(thisAgent, "%s   %-%s\n", concatJustified("smem --add","{ (id ^attr value)* }", 55).c_str(), "Add concepts to semantic memory");
-//    outputManager->printa_sf(thisAgent, "%s   %-%s\n", concatJustified("smem --backup","<filename>", 55).c_str(), "Creates a backup of the semantic database on disk");
-//    outputManager->printa_sf(thisAgent, "%s   %-%s\n", concatJustified("smem --init ","", 55).c_str(), "Reinitialize ALL memories");
-//    outputManager->printa_sf(thisAgent, "%s   %-%s\n", concatJustified("smem --query ","{(<cue>*} [<num>]}", 55).c_str(), "Query for concepts in semantic store matching some cue");
-//    outputManager->printa_sf(thisAgent, "%s   %-%s\n", concatJustified("smem --remove","{ (id [^attr [value]])* }", 55).c_str(), "Remove concepts from semantic memory");
-//    outputManager->printa(thisAgent, "------------------------ Printing ---------------------\n");
-//    outputManager->printa_sf(thisAgent, "%s   %-%s\n", concatJustified("print","@", 55).c_str(), "Print semantic memory store");
-//    outputManager->printa_sf(thisAgent, "%s   %-%s\n", concatJustified("print","<LTI>", 55).c_str(), "Print specific semantic memory");
-//    outputManager->printa(thisAgent, "---------------------- Activation --------------------\n");
-//    outputManager->printa_sf(thisAgent, "%s   %-%s\n", concatJustified("smem --history","<LTI>", 55).c_str(), "Print activation history for some LTM");
-//    outputManager->printa_sf(thisAgent, "%s   %-%s\n", concatJustified("activation-mode", activation_mode->get_string(), 55).c_str(), "recency, frequency, base-level");
-//    outputManager->printa_sf(thisAgent, "%s   %-%s\n", concatJustified("activate-on-query", activate_on_query->get_string(), 55).c_str(), "on, off");
-//    outputManager->printa_sf(thisAgent, "%s   %-%s\n", concatJustified("base-decay", base_decay->get_string(), 55).c_str(), "Decay parameter for base-level activation computation");
-//    outputManager->printa_sf(thisAgent, "%s   %-%s\n", concatJustified("base-update-policy", base_update->get_string(), 55).c_str(), "stable, naive, incremental");
-//    outputManager->printa_sf(thisAgent, "%s   %-%s\n", concatJustified("base-incremental-threshes", base_incremental_threshes->get_string(), 55).c_str(), "integer > 0");
-//    outputManager->printa_sf(thisAgent, "%s   %-%s\n", concatJustified("thresh", thresh->get_string(), 55).c_str(), "integer >= 0");
-//    outputManager->printa(thisAgent, "------------- Database Optimization Settings ----------\n");
-//    outputManager->printa_sf(thisAgent, "%s   %-%s\n", concatJustified("lazy-commit", lazy_commit->get_string(), 55).c_str(), "Delay writing semantic store until exit");
-//    outputManager->printa_sf(thisAgent, "%s   %-%s\n", concatJustified("optimization", opt->get_string(), 55).c_str(), "safety, performance");
-//    outputManager->printa_sf(thisAgent, "%s   %-%s\n", concatJustified("cache-size", cache_size->get_string(), 55).c_str(), "Number of memory pages used for SQLite cache");
-//    outputManager->printa_sf(thisAgent, "%s   %-%s\n", concatJustified("page-size", page_size->get_string(), 55).c_str(), "Size of each memory page used");
-//    outputManager->printa(thisAgent, "----------------- Timers and Statistics ---------------\n");
-//    outputManager->printa_sf(thisAgent, "%s   %-%s\n", concatJustified("timers", timers->get_string(), 55).c_str(), "Timer granularity (off, one, two, three)");
-//    outputManager->printa_sf(thisAgent, "%s   %-%s\n", concatJustified("smem --timers ","[<timer>]", 55).c_str(), "Print timer summary or specific statistic:");
-//    outputManager->printa_sf(thisAgent, "%-%- (_total, smem_api, smem_hash, smem_init, smem_query)\n");
-//    outputManager->printa_sf(thisAgent, "%-%- (smem_ncb_retrieval, smem_storage, three_activation)\n");
-//    outputManager->printa_sf(thisAgent, "%s   %-%s\n", concatJustified("smem --stats","[<stat>]", 55).c_str(), "Print statistic summary or specific statistic:");
-//    outputManager->printa_sf(thisAgent, "%-%- (act_updates, db-lib-version, edges, mem-usage)\n");
-//    outputManager->printa_sf(thisAgent, "%-%- (mem-high, nodes, queries, retrieves, stores)\n");
-//    outputManager->printa(thisAgent, "-------------------------------------------------------\n\n");
-//    outputManager->printa_sf(thisAgent, "For a detailed explanation of these settings:  %-%- help output\n");
-
-    // Print Epmem Settings
-//    PrintCLIMessage_Header("Episodic Memory Settings", 40);
-//    PrintCLIMessage_Item("learning:", thisAgent->EpMem->epmem_params->learning, 40);
-//    PrintCLIMessage_Section("Encoding", 40);
-//    PrintCLIMessage_Item("phase:", thisAgent->EpMem->epmem_params->phase, 40);
-//    PrintCLIMessage_Item("trigger:", thisAgent->EpMem->epmem_params->trigger, 40);
-//    PrintCLIMessage_Item("force:", thisAgent->EpMem->epmem_params->force, 40);
-//    PrintCLIMessage_Item("exclusions:", thisAgent->EpMem->epmem_params->exclusions, 40);
-//    PrintCLIMessage_Section("Storage", 40);
-//    PrintCLIMessage_Item("database:", thisAgent->EpMem->epmem_params->database, 40);
-//    PrintCLIMessage_Item("append:", thisAgent->EpMem->epmem_params->append_db, 40);
-//    PrintCLIMessage_Item("path:", thisAgent->EpMem->epmem_params->path, 40);
-//    PrintCLIMessage_Item("lazy-commit:", thisAgent->EpMem->epmem_params->lazy_commit, 40);
-//    PrintCLIMessage_Section("Retrieval", 40);
-//    PrintCLIMessage_Item("balance:", thisAgent->EpMem->epmem_params->balance, 40);
-//    PrintCLIMessage_Item("graph-match:", thisAgent->EpMem->epmem_params->graph_match, 40);
-//    PrintCLIMessage_Item("graph-match-ordering:", thisAgent->EpMem->epmem_params->gm_ordering, 40);
-//    PrintCLIMessage_Section("Performance", 40);
-//    PrintCLIMessage_Item("page-size:", thisAgent->EpMem->epmem_params->page_size, 40);
-//    PrintCLIMessage_Item("cache-size:", thisAgent->EpMem->epmem_params->cache_size, 40);
-//    PrintCLIMessage_Item("optimization:", thisAgent->EpMem->epmem_params->opt, 40);
-//    PrintCLIMessage_Item("timers:", thisAgent->EpMem->epmem_params->timers, 40);
-//    PrintCLIMessage_Section("Experimental", 40);
-//    PrintCLIMessage_Item("merge:", thisAgent->EpMem->epmem_params->merge, 40);
-//    PrintCLIMessage("");
-}
-
-void epmem_param_container::print_summary(agent* thisAgent)
-{
-    std::string tempString;
-    Output_Manager* outputManager = thisAgent->outputManager;
-
-    std::string lStr("Episodic memory is ");
-    lStr.append(thisAgent->EpMem->epmem_params->learning->get_value() ? "enabled." : "not enabled.");
-//    PrintCLIMessage(lStr.c_str());
-//    PrintCLIMessage("Use 'epmem ?' to see EpMem setting and 'help epmem' to learn more about the epmem command.");
 }

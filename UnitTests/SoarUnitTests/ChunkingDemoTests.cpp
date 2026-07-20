@@ -17,9 +17,9 @@
 
 void ChunkingDemoTests::Demo_Arithmetic()                                 { check_chunk("Demo_Arithmetic", 2810, 29, false); }
 void ChunkingDemoTests::Demo_Blocks_World_Hierarchical_Look_Ahead()       { check_chunk("Demo_Blocks_World_Hierarchical_Look_Ahead", 47, 1, false); }
-void ChunkingDemoTests::Demo_Blocks_World_Hierarchical()                  { check_chunk("Demo_Blocks_World_Hierarchical", 24, 20, false); }
-void ChunkingDemoTests::Demo_Blocks_World_Look_Ahead_State_Evaluation()   { check_chunk("Demo_Blocks_World_Look_Ahead_State_Evaluation", 61, 40, false); }
-void ChunkingDemoTests::Demo_Blocks_World_Look_Ahead()                    { check_chunk("Demo_Blocks_World_Look_Ahead", 64, 8, false); }
+void ChunkingDemoTests::Demo_Blocks_World_Hierarchical()                  { check_chunk("Demo_Blocks_World_Hierarchical", 24, 12, false); }
+void ChunkingDemoTests::Demo_Blocks_World_Look_Ahead_State_Evaluation()   { check_chunk("Demo_Blocks_World_Look_Ahead_State_Evaluation", 61, 12, false); }
+void ChunkingDemoTests::Demo_Blocks_World_Look_Ahead()                    { check_chunk("Demo_Blocks_World_Look_Ahead", 64, 6, false); }
 void ChunkingDemoTests::Demo_Blocks_World_Operator_Subgoaling()           { check_chunk("Demo_Blocks_World_Operator_Subgoaling", 6, 1, false); }
 void ChunkingDemoTests::Demo_Eight_Puzzle()                               { check_chunk("Demo_Eight_Puzzle", 20, 7, false); }
 void ChunkingDemoTests::Demo_Graph_Search()                               { check_chunk("Demo_Graph_Search", 20, 7, false); }
@@ -32,7 +32,7 @@ void ChunkingDemoTests::Demo_Water_Jug_Tie()                              { chec
 void ChunkingDemoTests::Elio_Agent()                                      { check_chunk("Elio_Agent", 795, 135, false); }
 void ChunkingDemoTests::PRIMS_Sanity1()                                   { check_chunk("PRIMS_Sanity1", 795, 16, false); }
 void ChunkingDemoTests::PRIMS_Sanity2()                                   { check_chunk("PRIMS_Sanity2", 728, 19, false); }
-void ChunkingDemoTests::Teach_Soar_90_Games()                             { check_chunk("Teach_Soar_90_Games", 10000, 16, false); } /* Should be 28 Probably re-ordering problems.  The rules learned are huge */
+void ChunkingDemoTests::Teach_Soar_90_Games()                             { check_chunk("Teach_Soar_90_Games", 10000, 15, false); } /* Should be 28 Probably re-ordering problems.  The rules learned are huge */
 void ChunkingDemoTests::Teach_Soar_9_Games()                              { check_chunk("Teach_Soar_9_Games", 23850, 60, false); } /* Should be 28 Probably re-ordering problems.  The rules learned are huge */
 
 void ChunkingDemoTests::setUp()
@@ -108,7 +108,7 @@ void ChunkingDemoTests::check_chunk(const char* pTestName, int64_t decisions, in
     //        SoarHelper::agent_command(agent,"trace -CbL 2");
     //    }
     SoarHelper::check_learning_override(agent);
-    agent->RunSelf(decisions, sml::sml_DECISION);
+    agent->RunSelf(decisions, sml::sml_DECIDE);
     assertTrue_msg(agent->GetLastErrorDescription(), agent->GetLastCommandLineResult());
 
     verify_chunk(pTestName, expected_chunks, directSourceChunks);

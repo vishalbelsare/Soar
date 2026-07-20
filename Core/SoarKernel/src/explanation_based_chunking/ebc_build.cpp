@@ -223,7 +223,6 @@ void Explanation_Based_Chunker::get_results_for_instantiation()
     m_results_match_goal_level = m_inst->match_goal_level;
     m_results_tc = get_new_tc_number(thisAgent);
     m_extra_results = m_inst->preferences_generated;
-    Identity* lNULL;
 
     for (pref = m_inst->preferences_generated; pref != NIL; pref = pref->inst_next)
     {
@@ -517,7 +516,7 @@ void Explanation_Based_Chunker::add_goal_or_impasse_tests()
     condition* cc;
     tc_number tc;   /* mark each id as we add a test for it, so we don't add
                      a test for the same id in two different places */
-    Symbol* idSym, *id_vrblz;
+    Symbol* idSym;
     test t;
     bool isa_goal, isa_impasse;
 
@@ -747,7 +746,6 @@ bool Explanation_Based_Chunker::add_chunk_to_rete()
 
 void Explanation_Based_Chunker::learn_rule_from_instance(instantiation* inst, instantiation** new_inst_list)
 {
-    preference*         pref;
     bool                lChunkValidated = true;
     bool                lRevertedChunk = false;
     condition*          l_inst_top = NULL;
@@ -772,7 +770,6 @@ void Explanation_Based_Chunker::learn_rule_from_instance(instantiation* inst, in
     }
 
     m_inst = inst;
-    m_failure_type = ebc_success;
 
     if (!can_learn_from_instantiation()) { m_inst = NULL; return; }
 
@@ -901,6 +898,12 @@ void Explanation_Based_Chunker::learn_rule_from_instance(instantiation* inst, in
     if (m_rule_type == ebc_chunk)
     {
         lChunkValidated = reorder_and_validate_chunk();
+        
+        /* Remove contradictory tests from chunk if validation succeeded */
+        if (lChunkValidated)
+        {
+            remove_contradictory_tests_from_chunk();
+        }
     }
 
     /* Handle rule learning failure.  With the addition of rule repair, this should only happen when there
@@ -956,7 +959,7 @@ void Explanation_Based_Chunker::learn_rule_from_instance(instantiation* inst, in
     m_chunk_inst->prod_name                         = m_prod->name;
     thisAgent->symbolManager->symbol_add_ref(m_chunk_inst->prod_name);
     m_chunk_inst->in_ms                             = true;                     /* set true for now, we'll find out later... */
-    m_chunk_inst->in_newly_created                  = true;
+    m_chunk_inst->in_newly_created                  = false;
     m_chunk_inst->tested_local_negation             = m_tested_local_negation;
     m_chunk_inst->creates_deep_copy                 = m_tested_deep_copy;
     m_chunk_inst->tested_LTM                        = m_tested_ltm_recall;
@@ -974,6 +977,7 @@ void Explanation_Based_Chunker::learn_rule_from_instance(instantiation* inst, in
         /* --- Add chunk instantiation to list of newly generated instantiations --- */
         m_chunk_inst->next = (*new_inst_list);
         (*new_inst_list) = m_chunk_inst;
+        m_chunk_inst->in_newly_created = true;  /* Set flag AFTER adding to list */
 
         /* Clean up.  (Now that m_chunk_inst s on the list of insts to be asserted, we
          *             set it to to null because so that clean_up() won't delete it.) */
@@ -1024,7 +1028,6 @@ void Explanation_Based_Chunker::clean_up (uint64_t pClean_up_id, soar_timer* pTi
     m_chunk_inst                        = NULL;
     m_prod_name                         = NULL;
     m_rule_type                         = ebc_no_rule;
-    m_failure_type                      = ebc_success;
 
     clear_symbol_identity_map();
     if (ebc_settings[SETTING_EBC_LEARNING_ON])

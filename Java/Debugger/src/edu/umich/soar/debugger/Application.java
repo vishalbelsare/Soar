@@ -1,10 +1,10 @@
-/** 
+/**
  * Application.java
  *
  * Title:			Debugger for Soar written in Java
- * Description:	
+ * Description:
  * @author			Douglas Pearson, 2005 (www.threepenny.net)
- * @version			
+ * @version
  */
 
 package edu.umich.soar.debugger;
@@ -15,10 +15,10 @@ public class Application
 {
 
     /************************************************************************
-     * 
+     *
      * Default constructor for the application -- creates the main frame and set
      * the look and feel.
-     * 
+     *
      *************************************************************************/
     public Application(String[] args, boolean alwaysInstallLibs, Display display)
     {
@@ -27,6 +27,8 @@ public class Application
             // Start the SWT version of the application (we used to have a Swing
             // version too)
             SWTApplication swtApp = new SWTApplication();
+
+
 
             swtApp.startApp(args, display);
 
@@ -42,12 +44,12 @@ public class Application
     }
 
     /*************************************************************************
-     * 
+     *
      * The application's main entry point.
-     * 
+     *
      * @param args
      *            Command line arguments. Currently ignored.
-     * 
+     *
      *************************************************************************/
     static public void main(String[] args)
     {

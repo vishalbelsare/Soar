@@ -46,6 +46,7 @@ void ChunkingTests::Literalization_of_NC_and_NCC()                    { check_ch
 void ChunkingTests::Literalization_with_BT_Constraints()              { check_chunk("Literalization_with_BT_Constraints", 8, 1); }
 void ChunkingTests::Literalization_with_BT_Constraints2()             { check_chunk("Literalization_with_BT_Constraints2", 8, 2); }
 void ChunkingTests::Literalization_with_Constraints()                 { check_chunk("Literalization_with_Constraints", 8, 1); }
+void ChunkingTests::Constant_Match_Literalization()                   { check_chunk("Constant_Match_Literalization", 8, 1); }
 void ChunkingTests::Maintain_Instantiation_Specific_Identity()        { check_chunk("Maintain_Instantiation_Specific_Identity", 8, 1); }
 void ChunkingTests::Max_Chunks()                                      { check_chunk("Max_Chunks", 8, 0); }
 void ChunkingTests::Max_Dupes()                                       { check_chunk("Max_Dupes", 8, 0); }
@@ -63,7 +64,7 @@ void ChunkingTests::No_Topstate_Match()                               { check_ch
 void ChunkingTests::Opaque_State_Barrier()                            { check_chunk("Opaque_State_Barrier", 8, 1); }
 void ChunkingTests::Operator_Selection_Knowledge_Ghost_Operator()     { check_chunk("Operator_Selection_Knowledge_Ghost_Operator", 4, 1); }
 void ChunkingTests::Operator_Selection_Knowledge_Mega_Test()          { check_chunk("Operator_Selection_Knowledge", 75, 14); }      // Should be 18.  2 could be because of uncertainty of numeric preferences.  Other 2 could be re-ordering issue.
-void ChunkingTests::Operator_Selection_Knowledge_In_Proposal()        { check_chunk("Operator_Selection_Knowledge_In_Proposal", 7, 2); }
+void ChunkingTests::Operator_Selection_Knowledge_In_Propose()        { check_chunk("Operator_Selection_Knowledge_In_Propose", 7, 2); }
 void ChunkingTests::Promoted_STI()                                    { check_chunk("Promoted_STI", 8, 1); }
 void ChunkingTests::Reorderer_Bad_Conjunction()                       { check_chunk("Reorderer_Bad_Conjunction", 8, 1); }
 void ChunkingTests::Repair_NOR_Temporal_Constraint()                  { check_chunk("Repair_NOR_Temporal_Constraint", 8, 3); }
@@ -88,6 +89,7 @@ void ChunkingTests::STI_Variablization_Same_Type()                    { check_ch
 void ChunkingTests::STI_Variablization()                              { check_chunk("STI_Variablization", 8, 1); }
 void ChunkingTests::STI_with_referents()                              { check_chunk("STI_with_referents", 8, 1); }
 void ChunkingTests::Superstate_Identity_Opaque()                      { check_chunk("Superstate_Identity_Opaque", 8, 1); }
+void ChunkingTests::Superstate_Identity_Opaque_Old_Singleton_Behavior() { check_chunk("Superstate_Identity_Opaque_Old_Singleton_Behavior", 8, 1); }
 void ChunkingTests::Ungrounded_in_BT_Constraint()                     { check_chunk("Ungrounded_in_BT_Constraint", 8, 2); }
 void ChunkingTests::Ungrounded_Mixed()                                { check_chunk("Ungrounded_Mixed", 8, 1); }
 void ChunkingTests::Ungrounded_Relational_Constraint()                { check_chunk("Ungrounded_Relational_Constraint", 8, 1); }
@@ -170,7 +172,7 @@ void ChunkingTests::check_chunk(const char* pTestName, int64_t decisions, int64_
 //        SoarHelper::agent_command(agent,"trace -CbL 2");
 //    }
     SoarHelper::check_learning_override(agent);
-    agent->RunSelf(decisions, sml::sml_DECISION);
+    agent->RunSelf(decisions, sml::sml_DECIDE);
     assertTrue_msg(agent->GetLastErrorDescription(), agent->GetLastCommandLineResult());
 
     verify_chunk(pTestName, expected_chunks, directSourceChunks);
@@ -262,7 +264,7 @@ void ChunkingTests::Singleton_Element_Types()
 
     SoarHelper::check_learning_override(agent);
 
-    agent->RunSelf(3, sml::sml_DECISION);
+    agent->RunSelf(3, sml::sml_DECIDE);
     assertTrue_msg(agent->GetLastErrorDescription(), agent->GetLastCommandLineResult());
 
     SoarHelper::agent_command(agent,"chunk singleton -c");
@@ -273,7 +275,7 @@ void ChunkingTests::Singleton_Element_Types()
     SoarHelper::agent_command(agent,"chunk singleton state constant-i constant");
     SoarHelper::agent_command(agent,"chunk singleton state constant-s constant");
     SoarHelper::agent_command(agent,"chunk singleton state constant-f constant");
-    agent->RunSelf(3, sml::sml_DECISION);
+    agent->RunSelf(3, sml::sml_DECIDE);
     assertTrue_msg(agent->GetLastErrorDescription(), agent->GetLastCommandLineResult());
 
     SoarHelper::agent_command(agent,"chunk singleton -c");
@@ -284,7 +286,7 @@ void ChunkingTests::Singleton_Element_Types()
     SoarHelper::agent_command(agent,"chunk singleton identifier constant-i constant");
     SoarHelper::agent_command(agent,"chunk singleton identifier constant-s constant");
     SoarHelper::agent_command(agent,"chunk singleton identifier constant-f constant");
-    agent->RunSelf(3, sml::sml_DECISION);
+    agent->RunSelf(3, sml::sml_DECIDE);
     assertTrue_msg(agent->GetLastErrorDescription(), agent->GetLastCommandLineResult());
 
     SoarHelper::agent_command(agent,"chunk singleton -c");
@@ -296,7 +298,7 @@ void ChunkingTests::Singleton_Element_Types()
     SoarHelper::agent_command(agent,"chunk singleton operator constant-s constant");
     SoarHelper::agent_command(agent,"chunk singleton operator constant-f constant");
 
-    agent->RunSelf(3, sml::sml_DECISION);
+    agent->RunSelf(3, sml::sml_DECIDE);
     assertTrue_msg(agent->GetLastErrorDescription(), agent->GetLastCommandLineResult());
 
     SoarHelper::agent_command(agent,"chunk singleton -c");
@@ -308,7 +310,7 @@ void ChunkingTests::Singleton_Element_Types()
     SoarHelper::agent_command(agent,"chunk singleton any constant-s constant");
     SoarHelper::agent_command(agent,"chunk singleton any constant-f constant");
 
-    agent->RunSelf(3, sml::sml_DECISION);
+    agent->RunSelf(3, sml::sml_DECIDE);
     assertTrue_msg(agent->GetLastErrorDescription(), agent->GetLastCommandLineResult());
 
     SoarHelper::agent_command(agent,"chunk singleton -c");
@@ -320,7 +322,7 @@ void ChunkingTests::Singleton_Element_Types()
     SoarHelper::agent_command(agent,"chunk singleton state constant-s any");
     SoarHelper::agent_command(agent,"chunk singleton state constant-f any");
 
-    agent->RunSelf(3, sml::sml_DECISION);
+    agent->RunSelf(3, sml::sml_DECIDE);
     assertTrue_msg(agent->GetLastErrorDescription(), agent->GetLastCommandLineResult());
 
     SoarHelper::agent_command(agent,"chunk singleton -c");
@@ -332,7 +334,7 @@ void ChunkingTests::Singleton_Element_Types()
     SoarHelper::agent_command(agent,"chunk singleton any constant-s any");
     SoarHelper::agent_command(agent,"chunk singleton any constant-f any");
 
-    agent->RunSelf(3, sml::sml_DECISION);
+    agent->RunSelf(3, sml::sml_DECIDE);
     assertTrue_msg(agent->GetLastErrorDescription(), agent->GetLastCommandLineResult());
 
     SoarHelper::agent_command(agent,"chunk singleton -c");
@@ -344,7 +346,7 @@ void ChunkingTests::Singleton_Element_Types()
     SoarHelper::agent_command(agent,"chunk singleton identifier constant-s constant");
     SoarHelper::agent_command(agent,"chunk singleton identifier constant-f constant");
 
-    agent->RunSelf(3, sml::sml_DECISION);
+    agent->RunSelf(3, sml::sml_DECIDE);
     assertTrue_msg(agent->GetLastErrorDescription(), agent->GetLastCommandLineResult());
 
     SoarHelper::agent_command(agent,"chunk singleton -c");
@@ -356,7 +358,7 @@ void ChunkingTests::Singleton_Element_Types()
     SoarHelper::agent_command(agent,"chunk singleton identifier constant-s identifier");
     SoarHelper::agent_command(agent,"chunk singleton identifier constant-f identifier");
 
-    agent->RunSelf(3, sml::sml_DECISION);
+    agent->RunSelf(3, sml::sml_DECIDE);
     assertTrue_msg(agent->GetLastErrorDescription(), agent->GetLastCommandLineResult());
 
     SoarHelper::agent_command(agent,"chunk singleton -c");
@@ -368,7 +370,7 @@ void ChunkingTests::Singleton_Element_Types()
     SoarHelper::agent_command(agent,"chunk singleton identifier constant-s state");
     SoarHelper::agent_command(agent,"chunk singleton identifier constant-f state");
 
-    agent->RunSelf(3, sml::sml_DECISION);
+    agent->RunSelf(3, sml::sml_DECIDE);
     assertTrue_msg(agent->GetLastErrorDescription(), agent->GetLastCommandLineResult());
 
     SoarHelper::agent_command(agent,"chunk singleton -c");

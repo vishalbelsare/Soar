@@ -37,12 +37,11 @@
 
 
 #include <algorithm>
-#include <assert.h>
+#include <cassert>
 #include <fstream>
 
 using namespace cli;
 using namespace sml;
-using namespace std;
 
 bool CommandLineInterface::DoLoad(std::vector<std::string>& argv, const std::string& pCmd)
 {
@@ -213,6 +212,9 @@ bool CommandLineInterface::DoSave(std::vector<std::string>& argv, const std::str
             if (thisAgent->SMem->connected() && (thisAgent->SMem->statistics->nodes->get_value() > 0))
             {
                 result = thisAgent->SMem->export_smem(0, export_text, &(err));
+                if (!result) {
+                    SetError(*err);
+                }
                 AddSaveText("# Semantic Memory\n");
                 if (!DoCLog(LOG_ADD, 0, &export_text, true)) return false;
             } else {
@@ -762,11 +764,6 @@ bool CommandLineInterface::DoSource(std::string path, SourceBitset* pOptions)
         return SetError("Failed to open file for reading: " + path);
     }
 
-    if (m_first_sourced_file.empty() && (filename != "settings.soar") && (filename != "settings_mazin.soar"))
-    {
-        m_first_sourced_file = filename;
-    }
-
     // obtain file size:
     fseek(pFile, 0, SEEK_END);
     long lSize = ftell(pFile);
@@ -870,7 +867,6 @@ bool CommandLineInterface::DoSource(std::string path, SourceBitset* pOptions)
         {
             this->UnregisterWithKernel(smlEVENT_BEFORE_PRODUCTION_REMOVED);
         }
-        agent* thisAgent = m_pAgentSML->GetSoarAgent();
         if (m_pSourceOptions && !m_pSourceOptions->test(SOURCE_DISABLE))
         {
             PrintSourceSummary(m_NumTotalProductionsSourced, m_TotalExcisedDuringSource, m_NumTotalProductionsIgnored);
@@ -917,7 +913,7 @@ bool CommandLineInterface::Source(const char* buffer, bool printFileStack)
     if (printFileStack)
     {
         std::string temp;
-        sourceError.append("\n\t");
+        sourceError.append("\t");
         sourceError.append(m_SourceFileStack.top());
         sourceError.append(":");
         sourceError.append(to_string(line, temp));
@@ -926,6 +922,11 @@ bool CommandLineInterface::Source(const char* buffer, bool printFileStack)
             sourceError.append(":");
             sourceError.append(to_string(line, temp));
         }
+        sourceError.append("\n");
+    }
+    if (sourceError.empty()) {
+        // It's important that we don't return an empty error string, as that will be interpreted as success
+        sourceError = "Error while sourcing file";
     }
     AppendError(sourceError);
     return false;

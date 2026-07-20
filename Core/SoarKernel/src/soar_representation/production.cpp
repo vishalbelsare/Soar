@@ -224,8 +224,6 @@ void add_symbol_to_tc(agent* thisAgent, Symbol* sym, tc_number tc, cons** id_lis
 
 void add_test_to_tc(agent* thisAgent, test t, tc_number tc,  cons** id_list, cons** var_list)
 {
-    cons* c;
-
     if (!t) return;
     add_symbol_to_tc(thisAgent, t->eq_test->data.referent, tc, id_list, var_list);
 
@@ -348,22 +346,22 @@ bool action_is_in_tc(action* a, tc_number tc)
  * so EBC can first try to fix unconnected conditions before creating
  * the production. */
 
-bool reorder_and_validate_lhs_and_rhs(agent*        thisAgent,
-                                      condition**   lhs_top,
-                                      action**      rhs_top,
-                                      bool          reorder_nccs,
-                              matched_symbol_list*  ungrounded_syms,
-                                     bool           add_ungrounded_lhs,
-                                     bool           add_ungrounded_rhs)
+ProdReorderFailureType reorder_and_validate_lhs_and_rhs(agent*        thisAgent,
+                                                        condition**   lhs_top,
+                                                        action**      rhs_top,
+                                                        bool          reorder_nccs,
+                                                matched_symbol_list*  ungrounded_syms,
+                                                        bool          add_ungrounded_lhs,
+                                                        bool          add_ungrounded_rhs)
 {
     tc_number tc;
-    bool lhs_good = false;
 
     thisAgent->symbolManager->reset_variable_generator(*lhs_top, *rhs_top);
     tc = get_new_tc_number(thisAgent);
     add_bound_variables_in_condition_list(thisAgent, *lhs_top, tc, NIL);
 
-    if (! reorder_action_list(thisAgent, rhs_top, tc, ungrounded_syms, add_ungrounded_rhs))
+    auto rhs_reorder_result = reorder_action_list(thisAgent, rhs_top, tc, ungrounded_syms, add_ungrounded_rhs);
+    if (rhs_reorder_result != reorder_success)
     {
         /* If there are problems on the LHS, we need the ungrounded_syms
          * from them, before we return.  So we call, reorder_lhs too.
@@ -372,11 +370,9 @@ bool reorder_and_validate_lhs_and_rhs(agent*        thisAgent,
         {
             reorder_lhs(thisAgent, lhs_top, reorder_nccs, ungrounded_syms);
         }
-        return false;
+        return rhs_reorder_result;
     }
-    lhs_good = reorder_lhs(thisAgent, lhs_top, reorder_nccs, ungrounded_syms, add_ungrounded_lhs);
-    if (!lhs_good) return false;
-    return true;
+    return reorder_lhs(thisAgent, lhs_top, reorder_nccs, ungrounded_syms, add_ungrounded_lhs);
 }
 
 /* Note:  The rete load command will create a production without calling this.  Changes made here may
@@ -394,21 +390,9 @@ production* make_production(agent*          thisAgent,
     production* p;
     action* a;
 
-    if (type != JUSTIFICATION_PRODUCTION_TYPE)
+    for (a = *rhs_top; a != NIL; a = a->next)
     {
-        for (a = *rhs_top; a != NIL; a = a->next)
-        {
-            a->support = UNKNOWN_SUPPORT;
-        }
-    }
-    else
-    {
-        /* --- for justifications --- */
-        /* force run-time o-support (it'll only be done once) */
-        for (a = *rhs_top; a != NIL; a = a->next)
-        {
-            a->support = UNKNOWN_SUPPORT;
-        }
+        a->support = UNKNOWN_SUPPORT;
     }
 
     thisAgent->memoryManager->allocate_with_pool(MP_production, &p);
@@ -476,6 +460,14 @@ void deallocate_production(agent* thisAgent, production* prod)
          * excise command, so we'll try clearing out the production pointers from
          * the remaining instantiations instead. */
         for (instantiation* lInst = prod->instantiations; lInst != NULL; lInst = lInst->next)
+        {
+            lInst->prod = NULL;
+        }
+    }
+
+    for (instantiation* lInst = thisAgent->newly_created_instantiations; lInst != NULL; lInst = lInst->next)
+    {
+        if (lInst->prod == prod)
         {
             lInst->prod = NULL;
         }

@@ -1,9 +1,9 @@
-/** 
+/**
  * AppProperties.java
  *
  * Description:		<describe the AppProperties class here>
  * @author			Doug
- * @version			
+ * @version
  */
 
 package edu.umich.soar.debugger.general;
@@ -12,6 +12,14 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.logging.Logger;
+
+import static java.nio.file.StandardCopyOption.ATOMIC_MOVE;
+import static java.nio.file.StandardCopyOption.REPLACE_EXISTING;
 
 public class AppProperties extends java.util.Properties
 {
@@ -19,9 +27,11 @@ public class AppProperties extends java.util.Properties
 
     protected String m_Filename;
 
-    protected String m_Header;
+    protected final String m_Header;
 
     protected final String kVersion = "Version";
+
+    private static final Logger LOGGER = Logger.getLogger(AppProperties.class.getName());
 
     /**
      * The filename is just a filename--not a full path. The file is stored
@@ -80,6 +90,9 @@ public class AppProperties extends java.util.Properties
         // directory (which is C:\Documents and Settings\<user>).
         if (osName.toLowerCase().startsWith("windows"))
         {
+            // NOTE: in current Windows, the path below resolves to
+            // C:/Users/<user>/AppData/Roaming/SoarDebugger
+
             // Add the Application Data folder name.
             // BUGBUG: Not sure how to do this in a language neutral way.
             homeDir = new File(homeDir, "Application Data");
@@ -139,14 +152,28 @@ public class AppProperties extends java.util.Properties
             // File doesn't exist. No properties to load, so we're done.
             return false;
         }
-
     }
 
-    public void Save() throws java.io.IOException
-    {
+    public void Save() throws java.io.IOException {
+        // write to a temp file first, then make the final changes via a rename.
+        // this prevents us from overwriting the file with an incomplete config,
+        // as could be the case if we hit an IO exception in the middle of writing
+        // the file.
         File filePath = this.GetFilePath();
-        FileOutputStream output = new FileOutputStream(filePath);
-        this.store(output, this.m_Header);
+        String tempFilename = filePath.getAbsolutePath() + ".temp";
+        Path tempPath = Paths.get(tempFilename);
+        Path finalPath = filePath.toPath();
+
+        try (FileOutputStream output = new FileOutputStream(tempPath.toFile())) {
+            this.store(output, this.m_Header);
+        }
+        try {
+            Files.move(tempPath, finalPath, REPLACE_EXISTING, ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException e) {
+            LOGGER.warning(
+                "Cannot write " + finalPath + " atomically (" + e.getMessage() + "); falling back to non-atomic write");
+            Files.move(tempPath, finalPath, REPLACE_EXISTING);
+        }
     }
 
     public String getFilename()
@@ -198,8 +225,7 @@ public class AppProperties extends java.util.Properties
             String value = this.getProperty(property);
             if (value != null)
             {
-                double d = Double.parseDouble(value);
-                return d;
+                return Double.parseDouble(value);
             }
         }
         catch (NumberFormatException e)
@@ -216,8 +242,7 @@ public class AppProperties extends java.util.Properties
             String value = this.getProperty(property);
             if (value != null)
             {
-                int i = Integer.parseInt(value);
-                return i;
+                return Integer.parseInt(value);
             }
         }
         catch (NumberFormatException e)

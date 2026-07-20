@@ -3,7 +3,7 @@
 #include "cli_CommandLineInterface.h"
 #include "sml_Utils.h"
 
-#include <assert.h>
+#include <cassert>
 
 #include <iostream>
 #include <fstream>
@@ -88,6 +88,8 @@ EXPORT CommandLineInterface::CommandLineInterface()
     m_Parser.AddCommand(new cli::TraceCommand(*this));
     m_Parser.AddCommand(new cli::WMCommand(*this));
     m_Parser.AddCommand(new cli::SVSCommand(*this));
+
+    GetCurrentWorkingDirectory(m_HomeDirectory);
 
     Soar_Instance::Get_Soar_Instance().Set_CLI(this);
 }
@@ -360,6 +362,7 @@ EXPORT void CommandLineInterface::SetKernel(sml::KernelSML* pKernelSML)
     m_pKernelSML = pKernelSML;
 }
 
+// TODO: migrate to std::filesystem::path once supported everywhere
 bool CommandLineInterface::GetCurrentWorkingDirectory(std::string& directory)
 {
     // Pull an arbitrary buffer size of 1024 out of a hat and use it
@@ -442,6 +445,7 @@ bool CommandLineInterface::SetError(const std::string& error)
             m_Result << std::endl;
         }
     m_Result << error;
+    m_Result << std::endl;
     m_LastError = error;
     return false;
 }
@@ -454,6 +458,7 @@ bool CommandLineInterface::AppendError(const std::string& error)
             m_Result << std::endl;
         }
     m_Result << error;
+    m_Result << std::endl;
     m_LastError.append(error);
     return false;
 }

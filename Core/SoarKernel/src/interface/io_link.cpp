@@ -40,7 +40,7 @@
 #include "working_memory_activation.h"
 #include "xml.h"
 
-#include <assert.h>
+#include <cassert>
 #include <ctype.h>
 #include "run_soar.h"
 #include <stdlib.h>
@@ -227,7 +227,7 @@ wme* find_input_wme_by_timetag_from_id(agent* thisAgent, Symbol* idSym, uint64_t
     // This is inefficient.  Using a hash table could save a lot here.
     for (pWME = idSym->id->input_wmes; pWME != NIL; pWME = pWME->next)
     {
-        //PrintDebugFormat("Timetag %ld", pWME->timetag) ;
+        //PrintDebugFormat("Timetag %" SCNu64, pWME->timetag) ;
         if (pWME->timetag == timetag)
         {
             return pWME ;
@@ -922,7 +922,7 @@ bool tio_whitespace[256];
 
 Symbol* get_io_symbol_from_tio_constituent_string(agent* thisAgent, char* input_string)
 {
-    long int_val;
+    int64_t int_val;
     double float_val;
     bool possible_id, possible_var, possible_sc, possible_ic, possible_fc;
     bool rereadable;
@@ -940,7 +940,7 @@ Symbol* get_io_symbol_from_tio_constituent_string(agent* thisAgent, char* input_
     if (possible_ic)
     {
         errno = 0;
-        int_val = strtol(input_string, NULL, 10);
+        int_val = strtoll(input_string, NULL, 10);
         if (errno)
         {
             thisAgent->outputManager->printa_sf(thisAgent,  "Text Input Error: bad integer (probably too large)\n");

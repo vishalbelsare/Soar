@@ -152,6 +152,7 @@ enum ChunkingSettings {
     SETTING_EBC_ALLOW_LOCAL_NEGATIONS,
     SETTING_EBC_ALLOW_OPAQUE,
     SETTING_EBC_ADD_LTM_LINKS,
+    SETTING_AUTOMATICALLY_CREATE_SINGLETONS,
     num_ebc_settings
  };
 
@@ -163,6 +164,7 @@ enum IDSet_Mapping_Type {
     IDS_literalized_LHS_literal,
     IDS_literalized_RHS_function_arg,
     IDS_literalized_RHS_function_compare,
+    IDS_literalized_constant_match,
 };
 
 enum IDSet_Deallocation_Type {
@@ -205,7 +207,7 @@ enum go_type_enum { GO_PHASE, GO_ELABORATION, GO_DECISION,
 
 enum top_level_phase { INPUT_PHASE = 0,
                        PROPOSE_PHASE,
-                       DECISION_PHASE,
+                       DECIDE_PHASE,
                        APPLY_PHASE,
                        OUTPUT_PHASE,
                        PREFERENCE_PHASE,
@@ -230,12 +232,12 @@ enum EBCTraceType {
     ebc_explanation_trace
 };
 
-enum EBCFailureType {
-    ebc_success,
-    ebc_failed_no_roots,
-    ebc_failed_negative_relational_test_bindings,
-    ebc_failed_reordering_rhs,
-    ebc_failed_unconnected_conditions
+enum ProdReorderFailureType {
+    reorder_success,
+    reorder_failed_no_roots,
+    reorder_failed_negative_relational_test_bindings,
+    reorder_failed_reordering_rhs,
+    reorder_failed_unconnected_conditions
 };
 
 enum EBCExplainStatus {
@@ -384,6 +386,7 @@ enum TestType
     SMEM_LINK_NOT_TEST = 13,
     SMEM_LINK_UNARY_TEST = 14,
     SMEM_LINK_UNARY_NOT_TEST = 15,
+    CONSTANT_MATCH_TEST = 16,
     NUM_TEST_TYPES
 };
 
@@ -476,8 +479,8 @@ enum SOAR_CALLBACK_TYPE             // if you change this, update soar_callback_
     BEFORE_OUTPUT_PHASE_CALLBACK,
     OUTPUT_PHASE_CALLBACK,
     AFTER_OUTPUT_PHASE_CALLBACK,
-    BEFORE_DECISION_PHASE_CALLBACK,
-    AFTER_DECISION_PHASE_CALLBACK,
+    BEFORE_DECIDE_PHASE_CALLBACK,
+    AFTER_DECIDE_PHASE_CALLBACK,
     BEFORE_PROPOSE_PHASE_CALLBACK,
     AFTER_PROPOSE_PHASE_CALLBACK,
     BEFORE_APPLY_PHASE_CALLBACK,
@@ -501,7 +504,7 @@ enum SOAR_CALLBACK_TYPE             // if you change this, update soar_callback_
     PRINT_CALLBACK,
     LOG_CALLBACK,
     INPUT_WME_GARBAGE_COLLECTED_CALLBACK,
-    NUMBER_OF_CALLBACKS               /* Not actually a callback   */
+		NUMBER_OF_CALLBACKS               /* Not actually a callback   */
     /* type.  Used to indicate   */
     /* list size and MUST ALWAYS */
     /* BE LAST.                  */

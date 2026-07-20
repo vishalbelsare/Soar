@@ -22,10 +22,12 @@
 #include "AgentTest.hpp"
 #include "AliasTest.hpp"
 #include "BasicTests.hpp"
+#include "BuiltinRHSTests.hpp"
 #include "ChunkingTests.hpp"
 #include "ChunkingDemoTests.hpp"
 #include "ElementXMLTest.hpp"
 #include "EpMemFunctionalTests.hpp"
+#include "ExternalLibraryTest.hpp"
 #include "FullTests.hpp"
 #include "FullTestsClientThread.hpp"
 #include "FullTestsClientThreadFullyOptimized.hpp"
@@ -36,25 +38,15 @@
 #include "MultiAgentTest.hpp"
 #include "SimpleListener.hpp"
 #include "SMemFunctionalTests.hpp"
+#include "SvsTests.hpp"
 #include "TokenizerTest.hpp"
 #include "wma/WmaFunctionalTests.hpp"
 #include "TestCategory.hpp"
 #include "TestRunner.hpp"
 
 #if defined(_WIN32) || defined(WIN32)
-
-#   if (_MSC_VER == 1900)
-std::string OS = "Windows VS2015";
-#   elif (_MSC_VER == 1800)
-std::string OS = "Windows VS2013";
-#   elif (_MSC_VER == 1700)
-std::string OS = "Windows VS2012";
-#   elif (_MSC_VER == 1600)
-std::string OS = "Windows VS2010";
-#   else
-std::string OS = "Windows Prior to VS2010";
-#endif
-
+#include <sstream>
+std::string OS = static_cast<std::ostringstream&>(std::ostringstream() << "Microsoft C/C++ " << _MSC_FULL_VER).str();
 #elif defined(__APPLE__)
 std::string OS = "OS X";
 #elif defined(__linux__)
@@ -71,7 +63,9 @@ void usage(std::string arg0)
     std::cout << "Usage: " << arg0 << " [options]" << std::endl << std::endl;
     std::cout << "OPTIONS:" << std::endl;
     std::cout << "\t" << "-c --category"                    << "\t\t\t\t" << "Run only these categories." << std::endl;
+    std::cout << "\t" << "   --list-categories"             << "\t\t\t" << "Prints a list of all test categories" << std::endl;
     std::cout << "\t" << "-t --test"                        << "\t\t\t\t" << "Run only these tests." << std::endl;
+    std::cout << "\t" << "   --list-tests"                  << "\t\t\t\t" << "Prints a list of all test names" << std::endl;
     std::cout << "\t" << "-E --exclude-category"            << "\t\t\t" << "Exclude this category." << std::endl;
     std::cout << "\t" << "-e --exclude-test"                << "\t\t\t" << "Exclude this test." << std::endl;
     std::cout << "\t" << "-F --expected-failure-category"   << "\t\t" << "Ignore failures in this category." << std::endl;
@@ -86,6 +80,27 @@ void usage(std::string arg0)
     std::cout << std::endl;
 }
 
+void print_categories(const std::vector<TestCategory*>& tests) {
+    std::cout << "Registered Test Categories" << std::endl;
+    for (TestCategory* category : tests) 
+    {
+        std::cout << "> " << category->getCategoryName() << std::endl;
+    }
+}
+
+void print_test_names(const std::vector<TestCategory*>& tests) {
+    std::cout << "Registered Tests" << std::endl;
+    for (TestCategory* category : tests) 
+    {
+        std::cout << "===== " << category->getCategoryName() << " ======" << std::endl;
+        for (TestCategory::TestCategory_test test : category->getTests())
+        {
+            std::cout << "> " << std::get<2>(test) << std::endl;
+        }
+        std::cout << std::endl;
+    }
+}
+
 int main(int argc, char** argv)
 {
     std::vector<std::string> runCategories;
@@ -95,6 +110,13 @@ int main(int argc, char** argv)
     std::vector<std::string> expectedFailureCategories;
     std::vector<std::string> expectedFailureTests;
     bool silent = false;
+    bool list_categories = false;
+    bool list_tests = false;
+
+    #if defined(_WIN32) || defined(WIN32)
+    // Allows printing emoji ✅
+    SetConsoleOutputCP(CP_UTF8);
+    #endif
 
     for (int index = 1; index < argc; ++index)
     {
@@ -166,6 +188,14 @@ int main(int argc, char** argv)
             usage(argv[0]);
             exit(0);
         }
+        else if (argument == "--list-categories")
+        {
+            list_categories = true;
+        }
+        else if (argument == "--list-tests")
+        {
+            list_tests = true;
+        }
         else if ((argument == "--silent" || argument == "-s"))
         {
             silent = true;
@@ -191,10 +221,12 @@ int main(int argc, char** argv)
     TEST_DECLARATION(AgentTest);
     TEST_DECLARATION(AliasTest);
     TEST_DECLARATION(BasicTests);
+    TEST_DECLARATION(BuiltinRHSTests);
     TEST_DECLARATION(ChunkingDemoTests);
     TEST_DECLARATION(ChunkingTests);
     TEST_DECLARATION(EpMemFunctionalTests);
     TEST_DECLARATION(ElementXMLTest);
+    TEST_DECLARATION(ExternalLibraryTest);
     TEST_DECLARATION(FullTests);
     TEST_DECLARATION(FullTestsClientThreadFullyOptimized);
     TEST_DECLARATION(FullTestsClientThread);
@@ -204,8 +236,22 @@ int main(int argc, char** argv)
     TEST_DECLARATION(MiscTests);
     TEST_DECLARATION(MultiAgentTest);
     TEST_DECLARATION(SMemFunctionalTests);
+    TEST_DECLARATION(SvsTests);
     TEST_DECLARATION(TokenizerTest);
     TEST_DECLARATION(WmaFunctionalTests);
+
+    // Support options to print a list of categories or tests, then exit
+    if (list_categories) 
+    {
+        print_categories(tests);
+        exit(0);
+    }
+
+    if (list_tests) 
+    {
+        print_test_names(tests);
+        exit(0);
+    }
 
     size_t successCount = 0;
     size_t expectedFailureCount = 0;
@@ -222,6 +268,7 @@ int main(int argc, char** argv)
 
     std::ofstream xml("TestResults.xml");
     xml << "<testsuite tests=\"" << tests.size() << "\">" << std::endl;
+
 
     for (TestCategory* category : tests)
     {
@@ -295,13 +342,8 @@ int main(int argc, char** argv)
             }
             else if (!runner->failed)
             {
-#ifndef _WIN32
                 std::cout << "✅" << std::endl;
-#else
-                std::cout << "Passed." << std::endl;
-#endif
                 std::cout.flush();
-
                 xml << " />" << std::endl;
             }
             else if (runner->failed && (std::find(expectedFailureCategories.begin(), expectedFailureCategories.end(), category->getCategoryName()) != expectedFailureCategories.end() || std::find(expectedFailureTests.begin(), expectedFailureTests.end(), std::get<2>(test)) != expectedFailureTests.end()))
@@ -310,9 +352,11 @@ int main(int argc, char** argv)
                 std::cout.flush();
                 ++expectedFailureCount;
 
-                xml << " >" << std::endl
-                    << "\t\t" << "<failure type=\"Test Failure\">" << runner->failureMessage << "</failure>" << std::endl
-                    << "\t</testcase>" << std::endl;
+                // status="ignored" with the failure message would be more correct,
+                //but our reporting tool can't currently handle this.
+                xml << " status=\"disabled\" />" << std::endl;
+                // << "\t\t" << "<failure type=\"Test Failure\">" << runner->failureMessage << "</failure>" << std::endl
+                // << "\t</testcase>" << std::endl;
             }
             else if (runner->failed)
             {

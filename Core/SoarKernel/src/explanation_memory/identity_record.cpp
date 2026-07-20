@@ -51,6 +51,7 @@ void identity_record::add_identity_mapping(uint64_t pI_ID, IDSet_Mapping_Type pT
         case IDS_literalized_RHS_literal:
         case IDS_literalized_RHS_function_arg:
         case IDS_literalized_RHS_function_compare:
+        case IDS_literalized_constant_match:
             thisAgent->explanationMemory->increment_stat_identities_literalized();
             break;
         default:
@@ -80,8 +81,6 @@ void identity_record::clean_up()
 
 void identity_record::clear_mappings()
 {
-    Output_Manager* outputManager = thisAgent->outputManager;
-
     for (auto it = instantiation_mappings->begin(); it != instantiation_mappings->end(); ++it)
     {
         identity_mapping* lMapping;
@@ -141,13 +140,13 @@ void identity_record::analyze_chunk_identities(uint64_t pInstID, condition* lhs)
 
 void identity_record::print_identity_mappings_for_instantiation(instantiation_record* pInstRecord)
 {
-    id_set* identities_in_inst = pInstRecord->get_lhs_identities();
-
+    // id_set* identities_in_inst = pInstRecord->get_lhs_identities();
+    // TODO: is this dead code or a WIP?
 }
 
 void identity_record::print_identities_in_chunk()
 {
-    thisAgent->outputManager->printa_sf(thisAgent, "\nLearned rule contained %u identities: ", identities_in_chunk->size());
+    thisAgent->outputManager->printa_sf(thisAgent, "\nLearned rule contained %u identities: ", static_cast<uint64_t>(identities_in_chunk->size()));
     for (auto it = identities_in_chunk->begin(); it != identities_in_chunk->end(); ++it)
     {
         thisAgent->outputManager->printa_sf(thisAgent, "%u ", (*it));
@@ -214,7 +213,6 @@ void identity_record::print_mapping_list(identity_mapping_list* pMapList, bool p
     Output_Manager* outputManager = thisAgent->outputManager;
     identity_mapping* lMapping;
     bool printOnlyChunkIdentities = thisAgent->explanationMemory->settings->only_print_chunk_identities->get_value();
-    Symbol* lSym;
 
     outputManager->reset_column_indents();
     outputManager->set_column_indent(1, 3);
@@ -268,6 +266,9 @@ void identity_record::print_mapping_list(identity_mapping_list* pMapList, bool p
             case IDS_literalized_RHS_function_compare:
                 outputManager->printa_sf(thisAgent, "%-| Variable in another rule tested result of RHS function");
                 break;
+            case IDS_literalized_constant_match:
+                outputManager->printa_sf(thisAgent, "%-| Variable literalized due to constant match test ($)");
+                break;
             default:
                 assert(false);
                 outputManager->printa_sf(thisAgent, "%-| Bad identity mapping type");
@@ -290,9 +291,7 @@ void identity_record::record_identity_sets(identity_set* identity_sets)
 
 void identity_record::visualize()
 {
-    Symbol*             lSym;
     identity_mapping*   lMapping;
-    Identity*        l_inst_identity;
 
     for (auto it = instantiation_mappings->begin(); it != instantiation_mappings->end(); ++it)
     {

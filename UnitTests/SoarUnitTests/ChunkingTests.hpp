@@ -15,13 +15,13 @@ class ChunkingTests : public FunctionalTestHarness
 {
 public:
 	TEST_CATEGORY(ChunkingTests);
-	
+
 	void before() { setUp(); }
 	void setUp();
-	
+
 	void after(bool caught) { tearDown(caught); }
 	void tearDown(bool caught);
-	
+
 	/* These 3 like to be first */
     TEST(SMem_Chunked_Query, -1);
     TEST(SMem_Chunked_Query2, -1);
@@ -36,6 +36,7 @@ public:
     TEST(Maintain_Instantiation_Specific_Identity, -1);
     TEST(Opaque_State_Barrier, -1);
     TEST(Superstate_Identity_Opaque, -1);
+    TEST(Superstate_Identity_Opaque_Old_Singleton_Behavior, -1);
     TEST(STI_Variablization, -1);
     TEST(STI_with_referents, -1);
     TEST(Conflated_Constants, -1);
@@ -58,6 +59,7 @@ public:
     TEST(Literalization_with_BT_Constraints, -1);
     TEST(Literalization_with_BT_Constraints2, -1);
     TEST(Literalization_with_Constraints, -1);
+    TEST(Constant_Match_Literalization, -1);
     TEST(Ungrounded_in_BT_Constraint, -1);
     TEST(Ungrounded_Mixed, -1);
     TEST(Ungrounded_Relational_Constraint, -1);
@@ -73,7 +75,7 @@ public:
 
     TEST(Operator_Selection_Knowledge_Ghost_Operator, -1);
     TEST(Operator_Selection_Knowledge_Mega_Test, -1);
-    TEST(Operator_Selection_Knowledge_In_Proposal, -1);
+    TEST(Operator_Selection_Knowledge_In_Propose, -1);
 
     TEST(Rhs_Func_Literalization, -1);
     TEST(RHS_Math, -1);
@@ -149,6 +151,7 @@ public:
     void Literalization_with_BT_Constraints();
     void Literalization_with_BT_Constraints2();
     void Literalization_with_Constraints();
+    void Constant_Match_Literalization();
     void Maintain_Instantiation_Specific_Identity();
     void Max_Chunks();
     void Max_Dupes();
@@ -165,7 +168,7 @@ public:
     void No_Topstate_Match();
     void Opaque_State_Barrier();
     void Operator_Selection_Knowledge_Ghost_Operator();
-    void Operator_Selection_Knowledge_In_Proposal();
+    void Operator_Selection_Knowledge_In_Propose();
     void Operator_Selection_Knowledge_Mega_Test();
     void Promoted_STI();
     void Reorderer_Bad_Conjunction();
@@ -192,6 +195,7 @@ public:
     void STI_Variablization();
     void STI_with_referents();
     void Superstate_Identity_Opaque();
+    void Superstate_Identity_Opaque_Old_Singleton_Behavior();
     void Ungrounded_in_BT_Constraint();
     void Ungrounded_Mixed();
     void Ungrounded_Relational_Constraint();

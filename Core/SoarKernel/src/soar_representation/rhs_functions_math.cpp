@@ -20,9 +20,11 @@
 #include "symbol.h"
 #include "symbol_manager.h"
 #include "working_memory.h"
+#include "float.h"
 
 #include <math.h>
 #include <stdlib.h>
+#include <vector>
 
 
 /* --------------------------------------------------------------------
@@ -891,7 +893,7 @@ Symbol* int_rhs_function_code(agent* thisAgent, cons* args, void* /*user_data*/)
         int64_t int_val;
 
         errno = 0;
-        int_val = strtol(sym->to_string(false, false, NIL, 0), NULL, 10);
+        int_val = strtoll(sym->to_string(false, false, NIL, 0), NULL, 10);
         if (errno)
         {
             thisAgent->outputManager->printa_sf(thisAgent, "Error: bad integer (%y) given to 'int' RHS function\n",
@@ -1089,14 +1091,14 @@ Symbol* round_off_heading_air_rhs_function_code(agent* thisAgent, cons* args, vo
 
     if (!args)
     {
-        thisAgent->outputManager->printa(thisAgent, "Error: 'round_off_heading' function called with no arguments\n");
+        thisAgent->outputManager->printa(thisAgent, "Error: 'round-off-heading' function called with no arguments\n");
         return NIL;
     }
 
     if (!args->rest)
     {
         /* --- only one argument --- */
-        thisAgent->outputManager->printa(thisAgent, "Error: 'round_off_heading' function called with only one argument.\n");
+        thisAgent->outputManager->printa(thisAgent, "Error: 'round-off-heading' function called with only one argument.\n");
         return NIL;
     }
 
@@ -1115,7 +1117,7 @@ Symbol* round_off_heading_air_rhs_function_code(agent* thisAgent, cons* args, vo
     if (c->rest)
     {
         /* --- more than two arguments --- */
-        thisAgent->outputManager->printa(thisAgent, "Error: 'round_off_heading' function called with more than two arguments.\n");
+        thisAgent->outputManager->printa(thisAgent, "Error: 'round-off-heading' function called with more than two arguments.\n");
         return NIL;
     }
     arg = static_cast<Symbol*>(c->first);
@@ -1326,6 +1328,168 @@ int64_t heading_to_point(int64_t current_x, int64_t current_y, int64_t x, int64_
 
     return convert(bracket_rad_to_deg(heading));
 }
+
+
+
+/* --------------------------------------------------------------------
+                                compute_x_point
+
+ Takes 4 integer args: x,heading(degrees),speed (distance/tick),elapsed_time(tick))
+ and returns integer x position (rounded to nearest int)
+-------------------------------------------------------------------- */
+int64_t compute_x_point(int64_t current_x, int64_t heading, int64_t speed, int64_t elapsed_time)
+{
+    // Convert heading from degrees to radians
+    double heading_rad = heading * PI / 180.0;
+
+    // Calculate distance traveled
+    double distance = speed * elapsed_time;
+
+    // Calculate new x positions
+    return current_x + (int)(round(distance * sin(heading_rad)));
+    //return current_y + (int)(distance * cos(heading_rad));
+}
+
+/* --------------------------------------------------------------------
+                                compute_y_point
+
+ Takes 4 integer args: y,heading(degrees),speed (distance/tick),elapsed_time(tick))
+ and returns integer y position (rounded to nearest int)
+-------------------------------------------------------------------- */
+int64_t compute_y_point(int64_t current_y, int64_t heading, int64_t speed, int64_t elapsed_time)
+{
+    // Convert heading from degrees to radians
+    double heading_rad = heading * PI / 180.0;
+
+    // Calculate distance traveled
+    double distance = speed * elapsed_time;
+
+    // Calculate new y positions
+    //return current_x + (int)(distance * sin(heading_rad));
+    return current_y + (int)(round(distance * cos(heading_rad)));
+}
+
+/* --------------------------------------------------------------------
+                                extrapolate-x-position
+
+ Takes 4 integer args: x1,heading(degrees),speed (distance/tick),elapsed_time(tick))
+ Assuming coordinate system where positive y is south and positive x is east
+ and returns integer x position (rounded to nearest int)
+-------------------------------------------------------------------- */
+
+Symbol* extrapolate_x_position_rhs_function_code(agent* thisAgent, cons* args, void* /*user_data*/)
+{
+    Symbol* arg;
+    int64_t current_x;
+    int64_t heading, speed, elapsed_time;
+    int count;
+    cons* c;
+
+    if (!args)
+    {
+        thisAgent->outputManager->printa(thisAgent, "Error: 'extrapolate-x-position' function called with no arguments\n");
+        return NIL;
+    }
+
+    count = 0;
+
+    for (c = args; c != NIL; c = c->rest)
+    {
+        arg = static_cast<Symbol*>(c->first);
+        if (arg->symbol_type != INT_CONSTANT_SYMBOL_TYPE)
+        {
+            thisAgent->outputManager->printa_sf(thisAgent, "Error: non int(%y) passed to extrapolate-x-position function.\n", arg);
+            return NIL;
+        }
+        else
+        {
+            count++;
+        }
+    }
+
+    if (count != 4)
+    {
+        thisAgent->outputManager->printa(thisAgent, "Error: 'extrapolate-x-position' takes exactly 4 arguments.\n");
+        return NIL;
+    }
+
+    arg = static_cast<Symbol*>(args->first);
+    current_x = (arg->symbol_type == INT_CONSTANT_SYMBOL_TYPE) ? arg->ic->value : static_cast<int64_t>(arg->fc->value);
+
+    arg = static_cast<Symbol*>(args->rest->first);
+    heading = (arg->symbol_type == INT_CONSTANT_SYMBOL_TYPE) ? arg->ic->value : static_cast<int64_t>(arg->fc->value);
+
+    arg = static_cast<Symbol*>(args->rest->rest->first);
+    speed = (arg->symbol_type == INT_CONSTANT_SYMBOL_TYPE) ? arg->ic->value : static_cast<int64_t>(arg->fc->value);
+
+    arg = static_cast<Symbol*>(args->rest->rest->rest->first);
+    elapsed_time = (arg->symbol_type == INT_CONSTANT_SYMBOL_TYPE) ? arg->ic->value : static_cast<int64_t>(arg->fc->value);
+
+    return thisAgent->symbolManager->make_int_constant(compute_x_point(current_x, heading, speed, elapsed_time));
+}
+
+/* --------------------------------------------------------------------
+                                extrapolate-y-position
+
+ Takes 4 integer args: y1,heading(degrees),speed (distance/tick),elapsed_time(tick))
+  Assuming coordinate system where positive y is south and positive x is east
+ and returns integer y position (rounded to nearest int)
+-------------------------------------------------------------------- */
+Symbol* extrapolate_y_position_rhs_function_code(agent* thisAgent, cons* args, void* /*user_data*/)
+{
+    Symbol* arg;
+    int64_t current_y;
+    int64_t heading, speed, elapsed_time;
+    int count;
+    cons* c;
+
+    if (!args)
+    {
+        thisAgent->outputManager->printa(thisAgent, "Error: 'extrapolate-y-position' function called with no arguments\n");
+        return NIL;
+    }
+
+    count = 0;
+    for (c = args; c != NIL; c = c->rest)
+    {
+        arg = static_cast<Symbol*>(c->first);
+        if (arg->symbol_type != INT_CONSTANT_SYMBOL_TYPE)
+        {
+            thisAgent->outputManager->printa_sf(thisAgent, "Error: non int(%y) passed to extrapolate-y-position function.\n", arg);
+            return NIL;
+        }
+        else
+        {
+            count++;
+        }
+    }
+
+    if (count != 4)
+    {
+        thisAgent->outputManager->printa(thisAgent, "Error: 'extrapolate-y-position' takes exactly 4 arguments.\n");
+        return NIL;
+    }
+
+
+    arg = static_cast<Symbol*>(args->first);
+    current_y = (arg->symbol_type == INT_CONSTANT_SYMBOL_TYPE) ? arg->ic->value : static_cast<int64_t>(arg->fc->value);
+    //Convert for coordinate system where postive y is down/south
+    current_y = -1 *current_y;
+    arg = static_cast<Symbol*>(args->rest->first);
+    heading = (arg->symbol_type == INT_CONSTANT_SYMBOL_TYPE) ? arg->ic->value : static_cast<int64_t>(arg->fc->value);
+
+    arg = static_cast<Symbol*>(args->rest->rest->first);
+    speed = (arg->symbol_type == INT_CONSTANT_SYMBOL_TYPE) ? arg->ic->value : static_cast<int64_t>(arg->fc->value);
+
+    arg = static_cast<Symbol*>(args->rest->rest->rest->first);
+    elapsed_time = (arg->symbol_type == INT_CONSTANT_SYMBOL_TYPE) ? arg->ic->value : static_cast<int64_t>(arg->fc->value);
+
+    //For coordinate system where postive y is down/south
+    int64_t computed_y = -1 * compute_y_point(current_y, heading, speed, elapsed_time);
+
+    return thisAgent->symbolManager->make_int_constant(computed_y);
+}
+
 
 /* --------------------------------------------------------------------
                                 compute-heading
@@ -1820,6 +1984,642 @@ Symbol* dice_prob_rhs_function_code(agent* thisAgent, cons* args, void* /*user_d
     return thisAgent->symbolManager->make_float_constant(ret);
 }
 
+/* Helper for processing more complex RHS functions */
+wme* get_wmes_for_named_slot(Symbol* idSym, Symbol* nameSym) {
+    if (idSym->is_sti()) {
+        idSymbol* id = idSym->id;  // get the id part of the union
+        for(struct slot_struct* slot = id->slots; slot != NIL; slot = slot->next) {
+            Symbol* attr_name = slot->attr;
+            if (nameSym == attr_name) {
+                return slot->wmes;
+            }
+        }
+    }
+    return NIL;
+}
+
+
+struct wme_val_stats {
+
+    long   count;
+    double sum;
+    double product;
+    double min;
+    double max;
+    double mean;
+    double sum_square;
+
+    wme_val_stats(): count(0), sum(0.0), product(1.0), min(DBL_MAX), max(-DBL_MAX), mean(0.0), sum_square(0.0) { }
+};
+
+
+
+typedef struct {
+    int64_t x;
+    int64_t y;
+    char * id;
+} Point;
+
+double calculate_angle(Point start, Point end)
+{
+    // Calculate angle in radians, with 0 pointing east
+    double angle_rad = atan2(end.y - start.y, end.x - start.x);
+
+    // Convert to degrees
+    double angle_deg = angle_rad * 180 / PI;
+
+    // Adjust to compass system (0 = North, clockwise)
+    angle_deg = 90 - angle_deg;
+    if (angle_deg < 0) angle_deg += 360;
+
+    return angle_deg;
+}
+
+double angle_difference(double angle1, double angle2)
+{
+    double diff = fabs(angle1 - angle2);
+    return (diff > 180) ? 360 - diff : diff;
+}
+
+double calculate_distance(Point p1, Point p2) {
+    int dx = p2.x - p1.x;
+    int dy = p2.y - p1.y;
+    return sqrt(dx*dx + dy*dy);
+}
+
+/* --------------------------------------------------------------------
+                                select_point_closest_to_vector
+
+ Takes 3 args: point{x,y,id}, heading(int compass degrees),array of points
+ and returns string id of nearest intercept
+-------------------------------------------------------------------- */
+char * select_point_closest_to_vector(Point starting, int heading, const std::vector<Point>& points)
+{
+    double min_angle_diff = DBL_MAX;
+    char nonvalid[] = "no_valid_point";
+    Point nearest_point = {1000, 1000, nonvalid};  // Initialize with invalid point
+
+    for (const auto& point : points)
+    {
+        double angle = calculate_angle(starting, point);
+        double angle_diff = angle_difference(heading, angle);
+
+        if (angle_diff < min_angle_diff)
+        {
+            min_angle_diff = angle_diff;
+            nearest_point = point;
+        }
+        //if the angle is the same choose closer point
+        if (angle_diff == min_angle_diff)
+        {
+            double previous_distance = calculate_distance(starting, nearest_point);
+            double new_distance = calculate_distance(starting, point);
+            if (new_distance < previous_distance)
+            {
+                min_angle_diff = angle_diff;
+                nearest_point = point;
+            }
+        }
+    }
+
+    return nearest_point.id;
+}
+
+/* --------------------------------------------------------------------
+                                compute_haversine_formula
+
+ Takes 4 args: lat1, long1, lat2, long2
+ and returns double of distance between latitude, longitude points in kilometeres
+-------------------------------------------------------------------- */
+double compute_haversine_formula(double lat1, double lon1, double lat2, double lon2)
+{
+    // Radius of Earth in kilometers
+    const double R = 6371.0;
+
+    // Convert degrees to radians
+    const double DEG_TO_RAD = PI / 180.0;
+    double lat_1 = lat1 * DEG_TO_RAD;
+    double long_1 = lon1 * DEG_TO_RAD;
+    double lat_2 = lat2 * DEG_TO_RAD;
+    double long_2 = lon2 * DEG_TO_RAD;
+
+    // Differences
+    double dLat = lat_2 - lat_1;
+    double dLon = long_2 - long_1;
+
+    // Haversine formula
+    double a = sin(dLat / 2) * sin(dLat / 2) +
+               cos(lat_1) * cos(lat_2) *
+               sin(dLon / 2) * sin(dLon / 2);
+    double c = 2 * atan2(sqrt(a), sqrt(1 - a));
+
+    // Distance in kilometers
+    double distance = R * c;
+
+    return distance;
+}
+
+
+/* --------------------------------------------------------------------
+                                compute_haversine_formula
+
+ Takes 4 args: lat1(double),long1(double),lat2(double),long2(double)
+ and returns double of distance between the two points in kilometers
+-------------------------------------------------------------------- */
+
+Symbol* compute_haversine_formula_rhs_function_code(agent* thisAgent, cons* args, void* /*user_data*/)
+{
+    Symbol* arg;
+    double lat_1, long_1, lat_2, long_2;
+
+    int count;
+    cons* c;
+
+    if (!args)
+    {
+        thisAgent->outputManager->printa(thisAgent, "Error: 'haversine' function called with no arguments\n");
+        return NIL;
+    }
+
+    count = 0;
+
+    for (c = args; c != NIL; c = c->rest)
+    {
+        arg = static_cast<Symbol*>(c->first);
+        //all 4 args are floats, but could be int
+        if (arg->symbol_type != FLOAT_CONSTANT_SYMBOL_TYPE && arg->symbol_type != INT_CONSTANT_SYMBOL_TYPE)
+        {
+            thisAgent->outputManager->printa_sf(thisAgent, "Error: non int/float (%y) passed to haversine function.\n", arg);
+            return NIL;
+        }
+        count = count + 1;
+    }
+
+    if (count != 4)
+    {
+        thisAgent->outputManager->printa(thisAgent, "Error: 'haversine' takes exactly 4 arguments.\n");
+        return NIL;
+    }
+
+    arg = static_cast<Symbol*>(args->first);
+    lat_1 = (arg->symbol_type == INT_CONSTANT_SYMBOL_TYPE) ? static_cast<double>(arg->ic->value) : arg->fc->value;
+
+    arg = static_cast<Symbol*>(args->rest->first);
+    long_1  = (arg->symbol_type == INT_CONSTANT_SYMBOL_TYPE) ? static_cast<double>(arg->ic->value) : arg->fc->value;
+    
+    arg = static_cast<Symbol*>(args->rest->rest->first);
+    lat_2  = (arg->symbol_type == INT_CONSTANT_SYMBOL_TYPE) ? static_cast<double>(arg->ic->value) : arg->fc->value;
+
+    arg = static_cast<Symbol*>(args->rest->rest->rest->first);
+    long_2  = (arg->symbol_type == INT_CONSTANT_SYMBOL_TYPE) ? static_cast<double>(arg->ic->value) : arg->fc->value;
+
+    return thisAgent->symbolManager->make_float_constant(compute_haversine_formula(lat_1, long_1, lat_2, long_2));
+}
+
+/* --------------------------------------------------------------------
+                                select_point_closest_to_vector
+
+ Takes 4 args: x1(int),y1(int),heading(int compass degrees),set of x,y points with id)
+ set = points.point <p> (<p> ^x <xpos> ^y <ypos> ^id |str-id|)
+  Assuming coordinate system where positive y is south and positive x is east
+ and returns string id of nearest intercept
+-------------------------------------------------------------------- */
+
+
+Symbol* select_point_closest_to_vector_rhs_function_code(agent* thisAgent, cons* args, void* /*user_data*/)
+{
+    Symbol* arg;
+    int64_t current_x;
+    int64_t current_y;
+    int64_t heading;
+
+    int count;
+    cons* c;
+
+    if (!args)
+    {
+        thisAgent->outputManager->printa(thisAgent, "Error: 'select-point-closest-to-vector' function called with no arguments\n");
+        return NIL;
+    }
+
+    count = 0;
+
+    for (c = args; c != NIL; c = c->rest)
+    {
+        arg = static_cast<Symbol*>(c->first);
+        //first 3 args are ints
+        if (count < 3 && (arg->symbol_type != INT_CONSTANT_SYMBOL_TYPE))
+        {
+            thisAgent->outputManager->printa_sf(thisAgent, "Error: non int (%y) passed to select-point-closest-to-vector function.\n", arg);
+            return NIL;
+        }
+        else
+        {
+            count++;
+        }
+    }
+
+    if (count != 4)
+    {
+        thisAgent->outputManager->printa(thisAgent, "Error: 'select-point-closest-to-vector' takes exactly 4 arguments.\n");
+        return NIL;
+    }
+
+    arg = static_cast<Symbol*>(args->first);
+    current_x = (arg->symbol_type == INT_CONSTANT_SYMBOL_TYPE) ? arg->ic->value : static_cast<int64_t>(arg->fc->value);
+
+    arg = static_cast<Symbol*>(args->rest->first);
+    current_y  = (arg->symbol_type == INT_CONSTANT_SYMBOL_TYPE) ? arg->ic->value : static_cast<int64_t>(arg->fc->value);
+    //converting to positive y=south coordinates
+    current_y = -1 * current_y;
+
+    arg = static_cast<Symbol*>(args->rest->rest->first);
+    heading = (arg->symbol_type == INT_CONSTANT_SYMBOL_TYPE) ? arg->ic->value : static_cast<int64_t>(arg->fc->value);
+
+    Symbol* points_arg = static_cast<Symbol*>(args->rest->rest->rest->first);
+    if (points_arg->symbol_type != IDENTIFIER_SYMBOL_TYPE) {
+      thisAgent->outputManager->printa_sf(thisAgent, "Error: non-symbol (%y) passed to select-point-closest-to-vector function for points\n",points_arg);
+      return NIL;
+    }
+
+    count = 0;
+    slot* pointslot = points_arg->id->slots; //slots for points
+
+    //count number of points
+    for (wme* curwmeA = pointslot->wmes; curwmeA != 0; curwmeA = curwmeA->next) {
+        count = count + 1;
+    }
+    std::vector<Point> points(count);
+    count = 0;
+    //point attributes
+    Symbol * x_symbol = thisAgent->symbolManager->make_str_constant("x");
+    Symbol * y_symbol = thisAgent->symbolManager->make_str_constant("y");
+    Symbol * id_symbol = thisAgent->symbolManager->make_str_constant("id");
+
+    //for all points in set
+    for (wme* curwmeA = pointslot->wmes; curwmeA != 0; curwmeA = curwmeA->next) {
+        Symbol* next_point = curwmeA->value;
+        if (next_point->symbol_type != IDENTIFIER_SYMBOL_TYPE) {
+            thisAgent->outputManager->printa_sf(thisAgent, "Error: non-symbol (%y) passed to select-point-closest-to-vector function for a point\n",next_point);
+            return NIL;
+        }
+        wme* wme_x = get_wmes_for_named_slot(next_point, x_symbol);
+        wme* wme_y = get_wmes_for_named_slot(next_point, y_symbol);
+        wme* wme_id = get_wmes_for_named_slot(next_point, id_symbol);
+        Symbol * x_value = wme_x->value;
+        Symbol * y_value = wme_y->value;
+        Symbol * id_value = wme_id->value;
+
+        // get values
+        int64_t point_x = (x_value->symbol_type == INT_CONSTANT_SYMBOL_TYPE) ? x_value->ic->value : static_cast<int64_t>(x_value->fc->value);
+        int64_t point_y = (y_value->symbol_type == INT_CONSTANT_SYMBOL_TYPE) ? y_value->ic->value : static_cast<int64_t>(y_value->fc->value);
+        //converting to positive y=south coordinates
+        point_y = -1 * point_y;
+        char * id = id_value->to_string(false, false, NIL, 0);
+
+        // add to point array
+        points[count] = {point_x,point_y,id};
+        count = count + 1;
+    }
+
+    char starting_name[] = "starting";
+    Point starting = {current_x, current_y, starting_name};
+    return thisAgent->symbolManager->make_str_constant(select_point_closest_to_vector(starting, heading, points));
+}
+
+/*
+ * Helper for set-based processes.  This calls the given fn for each wme in the set being processed.
+ *
+ * The return value is only not NIL if the fn returns an error symbol.
+ */
+[[nodiscard]] Symbol* set_reduce(agent* thisAgent, cons* args, Symbol* (*fn)(agent*, wme*, void*), void* data) {
+    cons* c = args;
+    Symbol* param_set_id_sym = static_cast<symbol_struct*>(c->first);
+
+    if (param_set_id_sym != NIL && param_set_id_sym->is_sti()) {
+        idSymbol* set_id = param_set_id_sym->id;
+                       c = c->rest;
+
+        if (c != NIL) {
+            Symbol* param_attr_name_sym = static_cast<symbol_struct*>(c->first);
+
+            if(param_attr_name_sym == NIL) {
+                return thisAgent->symbolManager->make_str_constant("|ERROR: Missing set attribute parameter.|");
+            }
+
+            Symbol* param_level_2       = NIL;
+            Symbol* param_level_3       = NIL;
+
+            // Optional nesting
+            c = c->rest;
+            if (c != NIL) {
+                param_level_2 = static_cast<symbol_struct*>(c->first);
+                c = c->rest;
+                if (c != NIL)
+                    param_level_3 = static_cast<symbol_struct*>(c->first);
+            }
+
+            for (wme* cwme = get_wmes_for_named_slot(set_id, param_attr_name_sym); cwme != NIL; cwme = cwme->next) {
+                // The following if statement handles nested values inside of a structure up to two levels.
+                // It can handle multi-valued attributes at all levels
+                if (!param_level_2) {
+                    Symbol* error = fn(thisAgent, cwme, data);
+                    if (error != NIL) { return error; }
+                } else {
+                    for(wme* cwme2 = get_wmes_for_named_slot(cwme->value, param_level_2); cwme2 != NIL; cwme2 = cwme2->next) {
+                        if(!param_level_3) {
+                            Symbol* error = fn(thisAgent, cwme2, data);
+                            if (error != NIL) { return error; }
+                        } else {
+                            for(wme* cwme3 = get_wmes_for_named_slot(cwme2->value, param_level_3); cwme3 != NIL; cwme3 = cwme3->next) {
+                                Symbol* error = fn(thisAgent, cwme3, data);
+                                if (error != NIL) { return error; }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    } else { return thisAgent->symbolManager->make_str_constant("|ERROR: First parameter needs to be an identifier.|"); }
+
+    return NIL;
+}
+
+// Simply counts wmes
+Symbol* count_wme(agent* thisAgent, wme* wme_to_count, void* data) {
+    struct wme_val_stats* stats = static_cast<struct wme_val_stats*>(data);
+    stats->count++;
+    return NIL;
+};
+
+// Adds the value of wmes
+Symbol* add_wme(agent* thisAgent, wme* wme_to_sum, void* data) {
+    struct wme_val_stats* stats = static_cast<struct wme_val_stats*>(data);
+    Symbol* wme_val = wme_to_sum->value;
+    if (wme_val != NIL) {
+        if (wme_val->is_float()) {
+            stats->sum += wme_val->fc->value;
+            stats->count++;
+        } else if (wme_val->is_int()) {
+            stats->sum += (double)wme_val->ic->value;
+            stats->count++;
+        }
+    }
+    return NIL;
+};
+
+// Multiplies the value of wmes
+Symbol* multiply_wme(agent* thisAgent, wme* wme_to_mult, void* data) {
+    struct wme_val_stats* stats = static_cast<struct wme_val_stats*>(data);
+    Symbol* wme_val = wme_to_mult->value;
+    if (wme_val != NIL) {
+        if (wme_val->is_float()) {
+            stats->product *= wme_val->fc->value;
+            stats->count++;
+        } else if (wme_val->is_int()) {
+            stats->product *= (double)wme_val->ic->value;
+            stats->count++;
+        }
+    }
+    return NIL;
+};
+
+// Replaces data with the minimum the value of wmes
+Symbol* min_max_wme(agent* thisAgent, wme* wme_to_min, void* data) {
+    struct wme_val_stats* stats = static_cast<struct wme_val_stats*>(data);
+    Symbol* wme_val = wme_to_min->value;
+    if (wme_val != NIL) {
+        double new_val;
+        if (wme_val->is_float())
+            new_val = wme_val->fc->value;
+        else if (wme_val->is_int())
+            new_val = wme_val->ic->value;
+        else
+            return NIL;
+
+        if (new_val < stats->min)
+            stats->min = new_val;
+        if (new_val > stats->max)
+            stats->max = new_val;
+        stats->count++;
+    }
+    return NIL;
+};
+
+Symbol* mean_wme(agent* thisAgent, wme* wme_to_sum, void* data) {
+    struct wme_val_stats* stats = static_cast<struct wme_val_stats*>(data);
+    Symbol* wme_val = wme_to_sum->value;
+    if (wme_val != NIL) {
+        if (wme_val->is_float()) {
+            stats->sum = stats->sum + wme_val->fc->value;
+            stats->count++;
+        } else if (wme_val->is_int()) {
+            stats->sum = stats->sum + (double)wme_val->ic->value;
+            stats->count++;
+        }
+    }
+    return NIL;
+};
+
+Symbol* stdev_wme(agent* thisAgent, wme* wme_to_sum, void* data) {
+    struct wme_val_stats* stats = static_cast<struct wme_val_stats*>(data);
+    Symbol* wme_val = wme_to_sum->value;
+    if (wme_val != NIL) {
+        if (wme_val->is_float()) {
+            double diff = wme_val->fc->value - stats->mean;
+            stats->sum_square = stats->sum_square + (diff * diff);
+        } else if (wme_val->is_int()) {
+            double diff = (double)wme_val->ic->value - stats->mean;
+            stats->sum_square = stats->sum_square + (diff * diff);
+        }
+    }
+    return NIL;
+};
+
+/*
+ * A right hand side function that can count the members of a set.
+ *
+ * Pass the soar id of the set (first parameter) and the name of the multi-valued attribute you
+ *   want counted (second parameter).
+ *
+ * Returns an error string if there is an issue with the parameters, otherwise the number of
+ * WMEs in the set.
+ */
+Symbol* set_count_rhs_function_code(agent* thisAgent, cons* args, void* /*user_data*/)
+{
+    struct wme_val_stats stats;
+    Symbol* error = set_reduce(thisAgent, args, count_wme, &stats);
+    if (error != NIL)
+        return error;
+    return thisAgent->symbolManager->make_int_constant(stats.count);
+}
+
+/*
+ * A right hand side function that sum the members of a set.
+ *
+ * Pass the soar id of the set (first parameter) and the name of the multi-valued attribute you
+ *   want summed (second parameter).
+ *
+ * Non-numeric attributes are ignored.
+ *
+ * Non-numeric attributes are ignored; returns "NaN" if no numeric values are found, or an error
+ * string if there is an issue with the parameters.
+ */
+Symbol* set_sum_rhs_function_code(agent* thisAgent, cons* args, void* /*user_data*/)
+{
+    struct wme_val_stats stats;
+    Symbol* error = set_reduce(thisAgent, args, add_wme, &stats);
+
+    if (error != NIL)
+        return error;
+
+    return (stats.count > 0)?
+                    thisAgent->symbolManager->make_float_constant(stats.sum):
+                    thisAgent->symbolManager->make_str_constant("NaN");
+}
+
+/*
+ * A right hand side function that multiplies the members of a set.
+ *
+ * Pass the soar id of the set (first parameter) and the name of the multi-valued attribute you
+ *   want multiplied (second parameter).
+ *
+ * Non-numeric attributes are ignored.
+ *
+ * Non-numeric attributes are ignored; returns "NaN" if no numeric values are found, or an error
+ * string if there is an issue with the parameters.
+ */
+Symbol* set_multiply_rhs_function_code(agent* thisAgent, cons* args, void* /*user_data*/)
+{
+    struct wme_val_stats stats;
+    Symbol* error = set_reduce(thisAgent, args, multiply_wme, &stats);
+
+    if (error != NIL)
+        return error;
+
+    return (stats.count > 0)?
+                    thisAgent->symbolManager->make_float_constant(stats.product):
+                    thisAgent->symbolManager->make_str_constant("NaN");
+}
+
+/*
+ * A right hand side function that finds the minimum of a set.
+ *
+ * Pass the soar id of the set (first parameter) and the name of the multi-valued attribute you
+ *   want min of (second parameter).
+ *
+ * Non-numeric attributes are ignored; returns "NaN" if no numeric values are found, or an error
+ * string if there is an issue with the parameters.
+ */
+Symbol* set_min_rhs_function_code(agent* thisAgent, cons* args, void* /*user_data*/)
+{
+    struct wme_val_stats stats;
+    Symbol* error = set_reduce(thisAgent, args, min_max_wme, &stats);
+
+    if (error != NIL)
+        return error;
+
+    return (stats.count > 0)?
+                    thisAgent->symbolManager->make_float_constant(stats.min):
+                    thisAgent->symbolManager->make_str_constant("NaN");
+}
+
+/*
+ * A right hand side function that finds the maximum of a set.
+ *
+ * Pass the soar id of the set (first parameter) and the name of the multi-valued attribute you
+ *   want max of (second parameter).
+ *
+ * Non-numeric attributes are ignored; returns "NaN" if no numeric values are found, or an error
+ * string if there is an issue with the parameters.
+ */
+Symbol* set_max_rhs_function_code(agent* thisAgent, cons* args, void* /*user_data*/)
+{
+    struct wme_val_stats stats;
+    Symbol* error = set_reduce(thisAgent, args, min_max_wme, &stats);
+
+    if (error != NIL)
+        return error;
+
+    return (stats.count > 0)?
+                    thisAgent->symbolManager->make_float_constant(stats.max):
+                    thisAgent->symbolManager->make_str_constant("NaN");
+}
+
+/*
+ * A right hand side function that finds the range of a set.
+ *
+ * Pass the soar id of the set (first parameter) and the name of the multi-valued attribute you
+ *   want range of (second parameter).
+ *
+ * Non-numeric attributes are ignored; returns "NaN" if no numeric values are found, or an error
+ * string if there is an issue with the parameters.
+ */
+Symbol* set_range_rhs_function_code(agent* thisAgent, cons* args, void* /*user_data*/)
+{
+    struct wme_val_stats stats;
+    Symbol* error = set_reduce(thisAgent, args, min_max_wme, &stats);
+
+    if (error != NIL)
+        return error;
+
+    return (stats.count > 0)?
+                    thisAgent->symbolManager->make_float_constant(stats.max - stats.min):
+                    thisAgent->symbolManager->make_str_constant("NaN");
+}
+
+/*
+ * A right hand side function that finds the mean value of a set.
+ *
+ * Pass the soar id of the set (first parameter) and the name of the multi-valued attribute you
+ *   want the mean of (second parameter).
+ *
+ * Non-numeric attributes are ignored; returns "NaN" if no numeric values are found, or an error
+ * string if there is an issue with the parameters.
+ */
+Symbol* set_mean_rhs_function_code(agent* thisAgent, cons* args, void* /*user_data*/)
+{
+    struct wme_val_stats stats;
+    Symbol* error = set_reduce(thisAgent, args, mean_wme, &stats);
+
+    if (error != NIL)
+        return error;
+
+    if (stats.count > 0) {
+        return thisAgent->symbolManager->make_float_constant(stats.sum / (double) stats.count);
+    } else {
+        return thisAgent->symbolManager->make_str_constant("NaN");
+    }
+
+}
+
+/*
+ * A right hand side function that finds the standard deviation of a set.
+ *
+ * Pass the soar id of the set (first parameter) and the name of the multi-valued attribute you
+ *   want the standard deviation of (second parameter).
+ *
+ * Non-numeric attributes are ignored; returns "NaN" if no numeric values are found, or an error
+ * string if there is an issue with the parameters.
+ */
+Symbol* set_stdev_rhs_function_code(agent* thisAgent, cons* args, void* /*user_data*/)
+{
+    struct wme_val_stats stats;
+    Symbol* error = set_reduce(thisAgent, args, mean_wme, &stats);
+
+    if (error != NIL)
+        return error;
+
+    if (stats.count > 0) {
+        stats.mean = stats.sum / stats.count;
+        Symbol* error = set_reduce(thisAgent, args, stdev_wme, &stats);
+        return (error == NIL)? thisAgent->symbolManager->make_float_constant(sqrt(stats.sum_square / (double) stats.count)): error;
+    } else {
+        return thisAgent->symbolManager->make_str_constant("NaN");
+    }
+
+}
+
 /* ====================================================================
 
                   Initialize the Built-In RHS Math Functions
@@ -1842,6 +2642,16 @@ void init_built_in_rhs_math_functions(agent* thisAgent)
     add_rhs_function(thisAgent, thisAgent->symbolManager->make_str_constant("min"), min_rhs_function_code, -1, true, false, 0, true);
     add_rhs_function(thisAgent, thisAgent->symbolManager->make_str_constant("max"), max_rhs_function_code, -1, true, false, 0, true);
 
+    /* RHS set functions */
+    add_rhs_function(thisAgent, thisAgent->symbolManager->make_str_constant("set-count"), set_count_rhs_function_code, -1, true, false, 0, true);
+    add_rhs_function(thisAgent, thisAgent->symbolManager->make_str_constant("set-sum"), set_sum_rhs_function_code, -1, true, false, 0, true);
+    add_rhs_function(thisAgent, thisAgent->symbolManager->make_str_constant("set-multiply"), set_multiply_rhs_function_code, -1, true, false, 0, true);
+    add_rhs_function(thisAgent, thisAgent->symbolManager->make_str_constant("set-min"), set_min_rhs_function_code, -1, true, false, 0, true);
+    add_rhs_function(thisAgent, thisAgent->symbolManager->make_str_constant("set-max"), set_max_rhs_function_code, -1, true, false, 0, true);
+    add_rhs_function(thisAgent, thisAgent->symbolManager->make_str_constant("set-range"), set_range_rhs_function_code, -1, true, false, 0, true);
+    add_rhs_function(thisAgent, thisAgent->symbolManager->make_str_constant("set-mean"), set_mean_rhs_function_code, -1, true, false, 0, true);
+    add_rhs_function(thisAgent, thisAgent->symbolManager->make_str_constant("set-stdev"), set_stdev_rhs_function_code, -1, true, false, 0, true);
+
     /* RHS trigonometry functions */
     add_rhs_function(thisAgent, thisAgent->symbolManager->make_str_constant("sin"), sin_rhs_function_code, 1, true, false, 0, true);
     add_rhs_function(thisAgent, thisAgent->symbolManager->make_str_constant("cos"), cos_rhs_function_code, 1, true, false, 0, true);
@@ -1856,6 +2666,11 @@ void init_built_in_rhs_math_functions(agent* thisAgent)
     add_rhs_function(thisAgent, thisAgent->symbolManager->make_str_constant("round-off"), round_off_air_rhs_function_code, 2, true, false, 0, true);
     add_rhs_function(thisAgent, thisAgent->symbolManager->make_str_constant("compute-heading"), compute_heading_rhs_function_code, 4, true, false, 0, true);
     add_rhs_function(thisAgent, thisAgent->symbolManager->make_str_constant("compute-range"), compute_range_rhs_function_code, 4, true, false, 0, true);
+    add_rhs_function(thisAgent, thisAgent->symbolManager->make_str_constant("extrapolate-x-position"), extrapolate_x_position_rhs_function_code, 4, true, false, 0, true);
+    add_rhs_function(thisAgent, thisAgent->symbolManager->make_str_constant("extrapolate-y-position"), extrapolate_y_position_rhs_function_code, 4, true, false, 0, true);
+    add_rhs_function(thisAgent, thisAgent->symbolManager->make_str_constant("select-point-closest-to-vector"), select_point_closest_to_vector_rhs_function_code, 4, true, false, 0, true);
+    add_rhs_function(thisAgent, thisAgent->symbolManager->make_str_constant("haversine"), compute_haversine_formula_rhs_function_code, 4, true, false, 0, true);
+
 
     /* RHS special purpose functions for Michigan Dice app*/
     add_rhs_function(thisAgent, thisAgent->symbolManager->make_str_constant("compute-dice-probability"), dice_prob_rhs_function_code, 4, true, false, 0, true);
@@ -1879,6 +2694,15 @@ void remove_built_in_rhs_math_functions(agent* thisAgent)
     remove_rhs_function(thisAgent, thisAgent->symbolManager->find_str_constant("min"));
     remove_rhs_function(thisAgent, thisAgent->symbolManager->find_str_constant("max"));
 
+    remove_rhs_function(thisAgent, thisAgent->symbolManager->find_str_constant("set-count"));
+    remove_rhs_function(thisAgent, thisAgent->symbolManager->find_str_constant("set-sum"));
+    remove_rhs_function(thisAgent, thisAgent->symbolManager->find_str_constant("set-multiply"));
+    remove_rhs_function(thisAgent, thisAgent->symbolManager->find_str_constant("set-min"));
+    remove_rhs_function(thisAgent, thisAgent->symbolManager->find_str_constant("set-max"));
+    remove_rhs_function(thisAgent, thisAgent->symbolManager->find_str_constant("set-range"));
+    remove_rhs_function(thisAgent, thisAgent->symbolManager->find_str_constant("set-mean"));
+    remove_rhs_function(thisAgent, thisAgent->symbolManager->find_str_constant("set-stdev"));
+
     remove_rhs_function(thisAgent, thisAgent->symbolManager->find_str_constant("sin"));
     remove_rhs_function(thisAgent, thisAgent->symbolManager->find_str_constant("cos"));
     remove_rhs_function(thisAgent, thisAgent->symbolManager->find_str_constant("atan2"));
@@ -1892,6 +2716,10 @@ void remove_built_in_rhs_math_functions(agent* thisAgent)
     remove_rhs_function(thisAgent, thisAgent->symbolManager->find_str_constant("compute-heading"));
     remove_rhs_function(thisAgent, thisAgent->symbolManager->find_str_constant("compute-range"));
     remove_rhs_function(thisAgent, thisAgent->symbolManager->find_str_constant("compute-dice-probability"));
+    remove_rhs_function(thisAgent, thisAgent->symbolManager->find_str_constant("extrapolate-x-position"));
+    remove_rhs_function(thisAgent, thisAgent->symbolManager->find_str_constant("extrapolate-y-position"));
+    remove_rhs_function(thisAgent, thisAgent->symbolManager->find_str_constant("select-point-closest-to-vector"));
+    remove_rhs_function(thisAgent, thisAgent->symbolManager->find_str_constant("haversine"));
 
     remove_rhs_function(thisAgent, thisAgent->symbolManager->find_str_constant("rand-int"));
     remove_rhs_function(thisAgent, thisAgent->symbolManager->find_str_constant("rand-float"));

@@ -127,7 +127,7 @@ void print_stack_trace(agent* thisAgent, bool print_states, bool print_operators
 
     if (stateCount > maxStates)
     {
-        thisAgent->outputManager->printa_sf(thisAgent,  "...Stack goes on for another %d states\n", stateCount - maxStates);
+        thisAgent->outputManager->printa_sf(thisAgent,  "...Stack goes on for another %d states\n", static_cast<int64_t>(stateCount - maxStates));
     }
 }
 
@@ -671,11 +671,18 @@ void print_symbol(agent* thisAgent, const char* arg, bool print_filename, bool i
                     if (lLti_id)
                     {
                         lLti_id = thisAgent->SMem->lti_exists(lLti_id);
-                        if (lLti_id == NIL)
-                        {
-                            thisAgent->outputManager->printa_sf(thisAgent,  "LTI %s not found in semantic memory.", lexeme.string());
-                            break;
-                        }
+                    }
+                    else 
+                    {
+                        // Treat the rest of the token as an LTI alias
+                        std::string lti_alias(lexeme.string());
+                        lti_alias = lti_alias.substr(1);
+                        lLti_id = thisAgent->SMem->get_lti_with_alias(lti_alias);
+                    }
+                    if (lLti_id == NIL)
+                    {
+                        thisAgent->outputManager->printa_sf(thisAgent,  "LTI %s not found in semantic memory.", lexeme.string());
+                        break;
                     }
                 }
                 thisAgent->SMem->attach();
@@ -706,7 +713,7 @@ void print_symbol(agent* thisAgent, const char* arg, bool print_filename, bool i
             }
             if (!w)
             {
-                thisAgent->outputManager->printa_sf(thisAgent,  "No wme %u in working memory.", lexeme.int_val);
+                thisAgent->outputManager->printa_sf(thisAgent,  "No wme %d in working memory.", lexeme.int_val);
             }
             break;
 
